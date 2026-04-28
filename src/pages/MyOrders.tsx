@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import CartOverlay from '@/components/store/CartOverlay';
 import { StoreGridSkeleton } from '@/components/SkeletonLoader';
+import StoreFooter from '@/components/store/StoreFooter';
 import { useCurrency } from '@/hooks/useCurrencyContext';
 
 interface OrderItem {
@@ -59,7 +60,7 @@ const statusConfig: Record<string, { label: string; icon: any; color: string; bg
 
 export default function MyOrders({ isMobileView: _isMobileView = false }: { isMobileView?: boolean }) {
     const navigate = useNavigate();
-    const { user } = useAuth() as any;
+    const { user, profile } = useAuth() as any;
     const { formatPrice } = useCurrency();
 
     const [orders,     setOrders]     = useState<Order[]>([]);
@@ -138,6 +139,7 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
 
     // ── Invoice PDF (Professional Breakdown) ───────────────
     const downloadInvoice = (order: Order) => {
+        const orderCurrency = order.regional_currency || order.currency;
         const items = order.order_items.map(item =>
             `<tr>
                 <td style="padding:16px 0;border-bottom:1px solid #f1f5f9">
@@ -147,137 +149,171 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
                     </div>
                 </td>
                 <td style="padding:16px 8px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:600;color:#64748b">${item.quantity}</td>
-                <td style="padding:16px 8px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;color:#64748b">&euro;${(item.unit_price || 0).toFixed(2)}</td>
-                <td style="padding:16px 0;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:800;color:#0f172a">&euro;${((item.unit_price || 0) * item.quantity).toFixed(2)}</td>
+                <td style="padding:16px 8px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;color:#64748b">${formatPrice(item.unit_price || 0, orderCurrency, orderCurrency)}</td>
+                <td style="padding:16px 0;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:800;color:#0f172a">${formatPrice((item.unit_price || 0) * item.quantity, orderCurrency, orderCurrency)}</td>
             </tr>`
         ).join('');
+
+        // Resolve customer name with priority: Order Shipping > Profile Name > Profile Display > Fallback
+        const profileName = profile?.first_name || profile?.last_name 
+            ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() 
+            : profile?.display_name;
+            
+        const customerName = order.shipping_address?.name || profileName || (user as any)?.display_name || 'Valued Customer';
+        const customerPhone = order.shipping_address?.phone || profile?.phone_number || '';
+        const customerEmail = (user as any)?.email || profile?.email || '';
 
         const html = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Invoice - Italostudy Store #${order.id.split('-')[0].toUpperCase()}</title>
-    <!-- Fonts & Latex -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Inter:wght@400;500;700&display=swap');
-        body { font-family: 'Inter', sans-serif; margin: 0; padding: 40px; color: #0f172a; line-height: 1.5; background: #fff; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            color: #0f172a; 
+            line-height: 1.5; 
+            background: #f8fafc; 
+        }
+        .invoice-wrapper {
+            max-width: 800px;
+            margin: 40px auto;
+            background: #fff;
+            padding: 60px;
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+            border: 1px solid #f1f5f9;
+            position: relative;
+        }
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 60px; }
         .brand { display: flex; align-items: center; gap: 12px; }
-        .brand-logo { height: 40px; }
+        .brand-logo { height: 44px; }
         .brand-divider { width: 2px; height: 24px; background: #e2e8f0; }
         .brand-text { font-family: 'Outfit', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.25em; font-size: 14px; color: #0f172a; }
         .invoice-meta { text-align: right; }
         .invoice-title { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 32px; margin: 0; line-height: 1; color: #0f172a; }
-        .invoice-id { font-family: 'monospace'; color: #94a3b8; font-size: 14px; margin: 8px 0; font-weight: 600; }
-        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 60px; }
+        .invoice-id { font-family: 'monospace'; color: #64748b; font-size: 14px; margin: 12px 0; font-weight: 700; background: #f1f5f9; padding: 4px 12px; border-radius: 8px; display: inline-block; }
+        
+        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 60px; padding-top: 40px; border-top: 1px solid #f1f5f9; }
         .meta-box h4 { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.2em; color: #94a3b8; margin: 0 0 12px 0; }
-        .meta-box p { margin: 0; font-size: 13px; font-weight: 600; color: #475569; }
+        .meta-box p { margin: 2px 0; font-size: 13px; font-weight: 600; color: #334155; }
+        .meta-box strong { color: #0f172a; font-weight: 700; }
+        
         table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
         th { text-align: left; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; color: #94a3b8; padding-bottom: 12px; border-bottom: 2px solid #0f172a; }
-        .total-section { margin-left: auto; width: 280px; }
+        
+        .total-section { margin-left: auto; width: 320px; background: #f8fafc; padding: 24px; border-radius: 20px; border: 1px solid #f1f5f9; }
         .total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; font-weight: 600; color: #64748b; }
-        .total-row.grand { padding-top: 16px; border-top: 2px solid #f1f5f9; margin-top: 12px; }
-        .total-row.grand span:last-child { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 26px; color: #0f172a; }
+        .total-row.grand { padding-top: 16px; border-top: 2px solid #e2e8f0; margin-top: 12px; }
+        .total-row.grand span:last-child { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 28px; color: #0f172a; }
         .total-row.discount { color: #10b981; }
+        
         .footer { margin-top: 80px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 40px; }
         .footer p { font-size: 11px; color: #94a3b8; font-weight: 500; margin: 4px 0; }
-        @media print { body { padding: 0; } .no-print { display: none; } }
+        
+        @media print { 
+            body { background: #fff; } 
+            .invoice-wrapper { margin: 0; box-shadow: none; border: none; padding: 0; }
+            .total-section { background: #fff !important; border: 1px solid #f1f5f9; }
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="brand">
-            <img src="${window.location.origin}/logo.webp" class="brand-logo" style="height:40px">
-            <div class="brand-divider"></div>
-            <span class="brand-text">Store</span>
-        </div>
-        <div class="invoice-meta">
-            <h1 class="invoice-title">TAX INVOICE</h1>
-            <p class="invoice-id">#${order.id.split('-')[0].toUpperCase()}</p>
-            <p style="font-size:13px; font-weight:700; color:#64748b">${format(new Date(order.created_at), 'MMMM dd, yyyy')}</p>
-        </div>
-    </div>
-
-    <div class="meta-grid">
-        <div class="meta-box">
-            <h4>Customer Details</h4>
-            <p>${(user as any)?.display_name || 'Valued Customer'}</p>
-            <p>${(user as any)?.email}</p>
-        </div>
-        ${order.shipping_address && Object.keys(order.shipping_address).length > 0 ? `
-        <div class="meta-box">
-            <h4>Shipping To</h4>
-            <p>${order.shipping_address.name || ''}</p>
-            <p>${order.shipping_address.address || ''}</p>
-            <p>${order.shipping_address.city || ''}, ${order.shipping_address.country || ''}</p>
-        </div>
-        ` : `
-        <div class="meta-box">
-            <h4>Fulfillment</h4>
-            <p>Digital Marketplace Order</p>
-            <p>Access: Instant Dashboard Download</p>
-        </div>
-        `}
-    </div>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th style="text-align:center">Qty</th>
-                <th style="text-align:right">Unit Price</th>
-                <th style="text-align:right">Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            ${items}
-        </tbody>
-    </table>
-
-    <div class="total-section">
-        <div class="total-row">
-            <span>Subtotal (Net)</span>
-            <span>${formatPrice(order.subtotal || order.total_amount, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
-        </div>
-        <div class="total-row">
-            <span>GST / Tax (18%)</span>
-            <span>${formatPrice(order.tax_amount || 0, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
-        </div>
-        ${order.discount_amount > 0 ? `
-        <div class="total-row discount">
-            <span>Coupon Discount</span>
-            <span>- ${formatPrice(order.discount_amount, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
-        </div>
-        ` : ''}
-        <div class="total-row grand">
-            <div style="display:flex; flex-direction:column">
-                <span style="font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:0.1em; font-size:11px">Grand Total</span>
-                <span style="font-size:9px; font-weight:700; color:#94a3b8; margin-top:2px; text-transform:uppercase; letter-spacing:0.05em">Paid via ${order.payment_method || 'Secure Gateway'}</span>
+    <div class="invoice-wrapper">
+        <div class="header">
+            <div class="brand">
+                <img src="${window.location.origin}/logo.webp" class="brand-logo">
+                <div class="brand-divider"></div>
+                <span class="brand-text">Store</span>
             </div>
-            <span>${formatPrice(order.total_amount, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
+            <div class="invoice-meta">
+                <h1 class="invoice-title">INVOICE</h1>
+                <p class="invoice-id">#${order.id.split('-')[0].toUpperCase()}</p>
+                <p style="font-size:13px; font-weight:700; color:#64748b; margin-top:4px;">
+                    Issued on ${format(new Date(order.created_at), 'MMMM dd, yyyy')}
+                </p>
+            </div>
         </div>
-    </div>
 
-    <div class="footer">
-        <p>Thank you for choosing Italostudy. Keep this invoice for your records.</p>
-        <p>© ${new Date().getFullYear()} Italostudy Store · contact@italostudy.com</p>
+        <div class="meta-grid">
+            <div class="meta-box">
+                <h4>Billed To</h4>
+                <p><strong>${customerName}</strong></p>
+                <p>${customerEmail}</p>
+                ${customerPhone ? `<p>${customerPhone}</p>` : ''}
+            </div>
+            ${order.shipping_address && Object.keys(order.shipping_address).length > 2 ? `
+            <div class="meta-box">
+                <h4>Shipping Address</h4>
+                <p><strong>${order.shipping_address.name}</strong></p>
+                <p>${order.shipping_address.address}</p>
+                <p>${order.shipping_address.city}, ${order.shipping_address.country}</p>
+                ${order.shipping_address.pincode ? `<p>PIN: ${order.shipping_address.pincode}</p>` : ''}
+            </div>
+            ` : `
+            <div class="meta-box">
+                <h4>Order Details</h4>
+                <p><strong>Digital Access Order</strong></p>
+                <p>Fulfillment: Instant</p>
+                <p>Payment: ${order.payment_method || 'Secure Gateway'}</p>
+            </div>
+            `}
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th style="text-align:center">Qty</th>
+                    <th style="text-align:right">Unit Price</th>
+                    <th style="text-align:right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${items}
+            </tbody>
+        </table>
+
+        <div class="total-section">
+            <div class="total-row">
+                <span>Subtotal</span>
+                <span>${formatPrice(order.subtotal || order.total_amount, orderCurrency, orderCurrency)}</span>
+            </div>
+            <div class="total-row">
+                <span>Tax (GST 18%)</span>
+                <span>${formatPrice(order.tax_amount || 0, orderCurrency, orderCurrency)}</span>
+            </div>
+            ${order.discount_amount > 0 ? `
+            <div class="total-row discount">
+                <span>Coupon Discount</span>
+                <span>- ${formatPrice(order.discount_amount, orderCurrency, orderCurrency)}</span>
+            </div>
+            ` : ''}
+            <div class="total-row grand">
+                <div style="display:flex; flex-direction:column">
+                    <span style="font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:0.1em; font-size:11px">Total Amount</span>
+                    <span style="font-size:9px; font-weight:700; color:#94a3b8; margin-top:2px; text-transform:uppercase; letter-spacing:0.05em">Paid in Full</span>
+                </div>
+                <span>${formatPrice(order.total_amount, orderCurrency, orderCurrency)}</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Thank you for your purchase from Italostudy Store.</p>
+            <p>This is a computer generated invoice and does not require a physical signature.</p>
+            <p>© ${new Date().getFullYear()} Italostudy Store · contact@italostudy.com</p>
+        </div>
     </div>
 
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            renderMathInElement(document.body, {
-                delimiters: [
-                    {left: "$$", right: "$$", display: true},
-                    {left: "$", right: "$", display: false},
-                    {left: "\\\\(", right: "\\\\)", display: false},
-                    {left: "\\\\[", right: "\\\\]", display: true}
-                ],
-                throwOnError : false
-            });
-        });
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+            }, 800);
+        };
     </script>
 </body>
 </html>`;
@@ -322,12 +358,12 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
                         </button>
                         {user ? (
                             <button onClick={() => window.open('https://app.italostudy.com/dashboard', '_blank', 'noopener,noreferrer')}
-                                className="hidden md:flex h-9 px-4 rounded-full bg-[#0f172a] text-white text-xs font-black uppercase tracking-widest">
+                                className="hidden md:flex items-center justify-center h-9 px-4 rounded-full bg-[#0f172a] text-white text-xs font-black uppercase tracking-widest">
                                 Dashboard
                             </button>
                         ) : (
                             <button onClick={() => navigate('/auth')}
-                                className="flex items-center gap-2 h-9 px-4 rounded-full bg-[#0f172a] text-white text-xs font-black uppercase tracking-widest">
+                                className="flex items-center justify-center gap-2 h-9 px-4 rounded-full bg-[#0f172a] text-white text-xs font-black uppercase tracking-widest">
                                 <LogIn className="w-4 h-4" />
                                 <span>Login</span>
                             </button>
@@ -615,21 +651,7 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
             </div>
 
             {/* Footer */}
-            <footer className="bg-[#0f172a] border-t border-slate-800 mt-10">
-                <div className="max-w-5xl mx-auto px-4 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <img src="/logo.webp" alt="Italostudy" className="h-7 brightness-0 invert opacity-80" />
-                        <div className="w-px h-4 bg-slate-700" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Store</span>
-                    </div>
-                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                        © {new Date().getFullYear()} Italostudy · All rights reserved
-                    </p>
-                    <a href="https://italostudy.com" className="text-[10px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 transition-colors">
-                        ← Back to Italostudy
-                    </a>
-                </div>
-            </footer>
+            <StoreFooter />
 
             <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
         </div>

@@ -8,10 +8,48 @@ export const Skeleton = ({ className }: SkeletonProps) => {
     return (
         <div
             className={cn(
-                "animate-premium-blink bg-slate-200/80 dark:bg-slate-800/80 rounded-lg shadow-inner",
+                "animate-premium-blink bg-slate-200/80 dark:bg-slate-800/80 rounded-lg shadow-inner overflow-hidden",
                 className
             )}
         />
+    );
+};
+
+export const CategoryNavSkeleton = () => {
+    return (
+        <div className="flex items-center gap-3">
+            <Skeleton className="h-7 w-12 rounded-full" />
+            <Skeleton className="h-7 w-28 rounded-full" />
+            <Skeleton className="h-7 w-24 rounded-full" />
+            <Skeleton className="h-7 w-32 rounded-full" />
+            <Skeleton className="h-7 w-20 rounded-full" />
+        </div>
+    );
+};
+
+export const CategorySidebarSkeleton = () => {
+    return (
+        <div className="space-y-1">
+            {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full rounded-xl" />
+            ))}
+        </div>
+    );
+};
+
+export const TrustStripSkeleton = () => {
+    return (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-6 border-t border-slate-200">
+            {[...Array(4)].map((_, i) => (
+                <div key={i} className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                    <Skeleton className="w-9 h-9 rounded-xl shrink-0" />
+                    <div className="space-y-2 flex-1">
+                        <Skeleton className="h-3 w-3/4 rounded-full" />
+                        <Skeleton className="h-2 w-full rounded-full" />
+                    </div>
+                </div>
+            ))}
+        </div>
     );
 };
 
@@ -222,6 +260,13 @@ export const StoreGridSkeleton = () => {
 export const StoreDetailSkeleton = () => {
     return (
         <div className="max-w-6xl mx-auto w-full px-4 py-8 md:py-12 animate-in fade-in duration-700">
+            <div className="flex items-center gap-2 h-9 mb-6">
+                <Skeleton className="h-3 w-16 rounded-full" />
+                <div className="w-1 h-1 rounded-full bg-slate-200" />
+                <Skeleton className="h-3 w-24 rounded-full" />
+                <div className="w-1 h-1 rounded-full bg-slate-200" />
+                <Skeleton className="h-3 w-32 rounded-full" />
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
                 <div className="space-y-4">
                     <div className="aspect-[4/3] md:aspect-square lg:aspect-[4/3] bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 relative overflow-hidden">

@@ -309,15 +309,15 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         // 3. Handle Live Payment
         if (storeMode === 'live') {
             if (paymentMethod === 'razorpay') {
-                await handleRazorpay(orderData.id, regionalTotal.amount, regionalTotal.currency);
+                const inrDetails = getPaymentDetails(total, 'INR');
+                await handleRazorpay(orderData.id, inrDetails.amount, inrDetails.currency);
             } else if (paymentMethod === 'paypal') {
-                // PayPal for store requires a hosted payment link configured in Admin Panel
-                // or rendering the PayPal SDK button — not supported as inline flow here.
                 toast.error('PayPal checkout requires a configured payment link. Please use Razorpay, Dodo, or Cashfree.');
                 setIsPlacing(false);
                 return;
             } else if (paymentMethod === 'cashfree') {
-                handleCashfree(orderData.id, regionalTotal.amount, regionalTotal.currency);
+                const inrDetails = getPaymentDetails(total, 'INR');
+                handleCashfree(orderData.id, inrDetails.amount, inrDetails.currency);
             } else if (paymentMethod === 'dodo') {
                 handleDodoPayment(orderData.id, regionalTotal.amount, regionalTotal.currency);
             } else {
@@ -789,7 +789,9 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                             <div>
                                                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0f172a]">Payment Method</p>
                                                 <p className="text-[9px] font-bold text-slate-400 mt-0.5">
-                                                    {storeMode === 'beta' ? 'Beta mode: All orders are currently free' : 'Secure and encrypted transaction'}
+                                                    {storeMode === 'beta' ? 'Beta mode: All orders are currently free' : 
+                                                     (paymentMethod === 'razorpay' || paymentMethod === 'cashfree') ? `Processing in INR (${formatPrice(total, 'EUR', 'INR')}) for UPI support` : 
+                                                     'Secure and encrypted transaction'}
                                                 </p>
                                             </div>
                                         </div>
@@ -804,30 +806,30 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                                             <button
                                                                 onClick={() => setPaymentMethod('dodo')}
                                                                 className={cn(
-                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left flex flex-col items-center justify-center gap-3",
                                                                     paymentMethod === 'dodo' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
                                                                 )}
                                                             >
-                                                                <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center mb-2 shadow-sm text-white">
-                                                                    <Smartphone className="w-4 h-4" />
+                                                                <img src="/payments/dodopayments.webp" alt="Dodo Payments" className="h-6 w-auto object-contain" />
+                                                                <div className="flex flex-wrap items-center justify-center gap-1.5 opacity-60">
+                                                                    <img src="/payments/stripe.webp" alt="Stripe" className="h-3 w-auto" />
+                                                                    <img src="/payments/googlepay.webp" alt="GPay" className="h-3 w-auto" />
+                                                                    <img src="/payments/applepay.webp" alt="Apple Pay" className="h-3 w-auto" />
+                                                                    <img src="/payments/cashapp.webp" alt="CashApp" className="h-3 w-auto" />
+                                                                    <img src="/payments/ideal.webp" alt="iDEAL" className="h-3 w-auto" />
+                                                                    <img src="/payments/pix.webp" alt="Pix" className="h-3 w-auto" />
                                                                 </div>
-                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Dodo Pay</p>
-                                                                <p className="text-[9px] text-slate-400 font-bold">Stripe / GPay / Apple</p>
                                                             </button>
                                                         )}
                                                         {gateways.paypal?.enabled && (
                                                             <button
                                                                 onClick={() => setPaymentMethod('paypal')}
                                                                 className={cn(
-                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left flex items-center justify-center",
                                                                     paymentMethod === 'paypal' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
                                                                 )}
                                                             >
-                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                                    <CreditCard className="w-4 h-4 text-blue-600" />
-                                                                </div>
-                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">PayPal</p>
-                                                                <p className="text-[9px] text-slate-400 font-bold">Global Wallet</p>
+                                                                <img src="/payments/paypal.webp" alt="PayPal" className="h-6 w-auto object-contain" />
                                                             </button>
                                                         )}
                                                         {gateways.stripe?.enabled && (
@@ -856,30 +858,24 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                                             <button
                                                                 onClick={() => setPaymentMethod('razorpay')}
                                                                 className={cn(
-                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left flex flex-col items-center justify-center gap-3",
                                                                     paymentMethod === 'razorpay' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
                                                                 )}
                                                             >
-                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                                    <Zap className="w-4 h-4 text-indigo-600" />
-                                                                </div>
-                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Razorpay</p>
-                                                                <p className="text-[9px] text-slate-400 font-bold">UPI / Cards (India)</p>
+                                                                <img src="/payments/razorpay.webp" alt="Razorpay" className="h-6 w-auto object-contain" />
+                                                                <img src="/payments/upi.webp" alt="UPI" className="h-3 w-auto opacity-70" />
                                                             </button>
                                                         )}
                                                         {gateways.cashfree?.enabled && (
                                                             <button
                                                                 onClick={() => setPaymentMethod('cashfree')}
                                                                 className={cn(
-                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left flex flex-col items-center justify-center gap-3",
                                                                     paymentMethod === 'cashfree' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
                                                                 )}
                                                             >
-                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                                    <Globe className="w-4 h-4 text-indigo-600" />
-                                                                </div>
-                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Cashfree</p>
-                                                                <p className="text-[9px] text-slate-400 font-bold">UPI / Netbanking</p>
+                                                                <img src="/payments/cashfree.webp" alt="Cashfree" className="h-6 w-auto object-contain" />
+                                                                <img src="/payments/upi.webp" alt="UPI" className="h-3 w-auto opacity-70" />
                                                             </button>
                                                         )}
                                                     </div>

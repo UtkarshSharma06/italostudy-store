@@ -21,7 +21,7 @@ interface CurrencyContextType {
     currency: CurrencyInfo;
     isLoading: boolean;
     formatPrice: (amount: number, fromCurrency?: string, forceCurrency?: string) => string;
-    getPaymentDetails: (amountInEUR: number) => { amount: number, currency: string };
+    getPaymentDetails: (amountInEUR: number, targetCurrency?: string) => { amount: number, currency: string };
     setManualCurrency: (code: string) => void;
     rates: Record<string, number>;
 }
@@ -90,12 +90,13 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         fetchRates();
     }, []);
 
-    const getPaymentDetails = useCallback((amountInEUR: number) => {
+    const getPaymentDetails = useCallback((amountInEUR: number, targetCurrency?: string) => {
         const fallbackRates: Record<string, number> = {
             'EUR': 1, 'INR': 106.6
         };
-        const rate = rates[currency.code] || fallbackRates[currency.code] || 1;
-        return { amount: amountInEUR * rate, currency: currency.code };
+        const target = targetCurrency || currency.code;
+        const rate = rates[target] || fallbackRates[target] || 1;
+        return { amount: amountInEUR * rate, currency: target };
     }, [currency.code, rates]);
 
     const formatPrice = useCallback((amount: number, fromCurrency = 'EUR', forceCurrency?: string): string => {

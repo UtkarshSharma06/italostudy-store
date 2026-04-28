@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import CartOverlay from '@/components/store/CartOverlay';
-import { StoreGridSkeleton } from '@/components/SkeletonLoader';
+import { StoreGridSkeleton, CategorySidebarSkeleton } from '@/components/SkeletonLoader';
+import StoreFooter from '@/components/store/StoreFooter';
 
 interface Product {
     id: string;
@@ -211,28 +212,34 @@ export default function AllProducts({ isMobileView = false }: { isMobileView?: b
                             <div className="px-5 py-4 border-b border-slate-50">
                                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Category</p>
                                 <div className="space-y-1">
-                                    <button
-                                        onClick={() => setActiveCategory('')}
-                                        className={cn(
-                                            "w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all",
-                                            !activeCategory ? "bg-[#0f172a] text-white" : "text-slate-600 hover:bg-slate-50"
-                                        )}
-                                    >
-                                        All Categories
-                                    </button>
-                                    {categories.map(cat => (
-                                        <button
-                                            key={cat.id}
-                                            onClick={() => setActiveCategory(cat.id === activeCategory ? '' : cat.id)}
-                                            className={cn(
-                                                "w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between",
-                                                activeCategory === cat.id ? "bg-[#0f172a] text-white" : "text-slate-600 hover:bg-slate-50"
-                                            )}
-                                        >
-                                            {cat.name}
-                                            {activeCategory === cat.id && <Check className="w-3 h-3" />}
-                                        </button>
-                                    ))}
+                                    {isLoading ? (
+                                        <CategorySidebarSkeleton />
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => setActiveCategory('')}
+                                                className={cn(
+                                                    "w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all",
+                                                    !activeCategory ? "bg-[#0f172a] text-white" : "text-slate-600 hover:bg-slate-50"
+                                                )}
+                                            >
+                                                All Categories
+                                            </button>
+                                            {categories.map(cat => (
+                                                <button
+                                                    key={cat.id}
+                                                    onClick={() => setActiveCategory(cat.id === activeCategory ? '' : cat.id)}
+                                                    className={cn(
+                                                        "w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between",
+                                                        activeCategory === cat.id ? "bg-[#0f172a] text-white" : "text-slate-600 hover:bg-slate-50"
+                                                    )}
+                                                >
+                                                    {cat.name}
+                                                    {activeCategory === cat.id && <Check className="w-3 h-3" />}
+                                                </button>
+                                            ))}
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
@@ -410,22 +417,8 @@ export default function AllProducts({ isMobileView = false }: { isMobileView?: b
                 </div>
             </div>
 
-            {/* Dark navy footer */}
-            <footer className="bg-[#0f172a] border-t border-slate-800 mt-10">
-                <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <img src="/logo.webp" alt="Italostudy" className="h-7 brightness-0 invert opacity-80" />
-                        <div className="w-px h-4 bg-slate-700" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Store</span>
-                    </div>
-                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                        © {new Date().getFullYear()} Italostudy · All rights reserved
-                    </p>
-                    <Link to="/" className="text-[10px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 transition-colors">
-                        ← Back to Italostudy
-                    </Link>
-                </div>
-            </footer>
+            {/* Footer */}
+            <StoreFooter />
 
             {/* Mobile filter drawer */}
             <AnimatePresence>
@@ -499,7 +492,7 @@ function ProductCard({ product, navigate, addedId, onAddToCart }: {
             className="group bg-white rounded-xl border border-slate-100 overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:shadow-slate-200/60 hover:-translate-y-0.5 flex flex-col">
             <div className="relative h-48 bg-slate-50">
                 <img
-                    src={product.images?.[0] || `https://placehold.co/400x300/f1f5f9/0f172a?text=${encodeURIComponent(product.title.slice(0, 10))}`}
+                    src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : `https://placehold.co/400x300/f1f5f9/0f172a?text=${encodeURIComponent(product.title.slice(0, 10))}`}
                     alt={product.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"
@@ -552,7 +545,7 @@ function ListCard({ product, navigate, addedId, onAddToCart }: {
             className="group bg-white rounded-xl border border-slate-100 overflow-hidden cursor-pointer transition-all hover:shadow-md flex gap-4 p-4">
             <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl overflow-hidden bg-slate-50 shrink-0">
                 <img
-                    src={product.images?.[0] || `https://placehold.co/200x200/f1f5f9/0f172a?text=${encodeURIComponent(product.title.slice(0, 8))}`}
+                    src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : `https://placehold.co/200x200/f1f5f9/0f172a?text=${encodeURIComponent(product.title.slice(0, 8))}`}
                     alt={product.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"
