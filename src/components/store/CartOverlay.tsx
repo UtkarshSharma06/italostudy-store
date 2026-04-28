@@ -371,7 +371,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
     };
 
-    const handleCashfree = async (_orderId: string, amount: number, currencyCode: string) => {
+    const handleCashfree = async (orderId: string, amount: number, currencyCode: string) => {
         setIsPlacing(true);
         try {
             // 1. Create a "shadow" transaction in the transactions table
@@ -388,13 +388,14 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
             
             const transactionId = rpcData.transaction_id;
 
-            // 2. Invoke Edge Function
+            // 2. Invoke Edge Function — pass storeOrderId so it gets saved to transactions.metadata
             const { data: edgeData, error: edgeError } = await (supabase as any).functions.invoke('create-cashfree-order', {
                 body: {
                     transactionId: transactionId,
                     amount: amount,
                     currency: currencyCode,
-                    customerPhone: phone
+                    customerPhone: phone,
+                    storeOrderId: orderId  // ← critical: links the store_order to this transaction
                 }
             });
 
@@ -460,10 +461,22 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
     };
 
-    const finalizeOrder = async (orderId: string, txnId: string) => {
-        await (supabase.from('store_orders' as any) as any)
-            .update({ status: 'paid', payment_intent_id: txnId })
-            .eq('id', orderId);
+    const finalizeOrder = async (orderId: string, txnId: string, gateway = 'razorpay') => {
+        // Use the finalize-store-order edge function (service role) to bypass RLS
+        // Direct DB update from the browser is blocked because store_orders has no UPDATE policy for users
+        const { data, error } = await supabase.functions.invoke('finalize-store-order', {
+            body: { store_order_id: orderId, payment_id: txnId, gateway }
+        });
+
+        if (error) {
+            console.error('finalize-store-order edge error:', error);
+            toast.error('Order payment recorded but status update failed. Contact support with Order ID: ' + orderId.substring(0, 8));
+        } else if (data?.error) {
+            console.error('finalize-store-order returned error:', data.error);
+            toast.error('Order update failed: ' + data.error);
+        }
+
+        // Always proceed to confirm — the webhook will also update eventually
         proceedToConfirm(orderId);
     };
 
