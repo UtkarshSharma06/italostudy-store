@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
     X, ShoppingBag, Trash2, Plus, Minus, ArrowRight,
-    Package, Monitor, CreditCard, Loader2, Check,
+    Monitor, CreditCard, Loader2, Check,
     MapPin, User, Smartphone, Home, Globe, ChevronRight, Tag, Zap, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useCurrency } from '@/hooks/useCurrencyContext';
 
 
 interface CartItem {
@@ -34,6 +35,7 @@ function clearCart() {
 export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
     const navigate = useNavigate();
     const { user, syncCart } = useAuth() as any;
+    const { currency, formatPrice, getPaymentDetails } = useCurrency();
 
     const [cart,       setCart]       = useState<CartItem[]>([]);
     const [step,       setStep]       = useState<Step>('cart');
@@ -52,18 +54,29 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
     const [city,    setCity]    = useState('');
     const [pincode, setPincode] = useState('');
     const [country, setCountry] = useState('Italy');
+    const [isAutoDetected, setIsAutoDetected] = useState(false);
 
     // Payment State — reads from store-admin's own config (system_settings → store_config)
     const [storeMode, setStoreMode] = useState<'beta' | 'live'>('beta');
     const [gateways, setGateways] = useState<any>(null);
     const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'razorpay' | 'paypal' | 'cashfree' | 'dodo' | 'beta'>('beta');
-    const [isPaying, setIsPaying] = useState(false);
+    // const [isPaying, setIsPaying] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
             loadStorePaymentConfig();
         }
     }, [isOpen]);
+
+    // Auto-detect country from currency hook
+    useEffect(() => {
+        if (currency.code === 'INR') {
+            setCountry('India');
+        } else if (currency.code === 'EUR' && (country === 'India' || !isAutoDetected)) {
+            setCountry('Italy');
+        }
+        setIsAutoDetected(true);
+    }, [currency.code]);
 
     const loadStorePaymentConfig = async () => {
         try {
@@ -92,12 +105,15 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                     setGateways(filtered);
                     loadPaymentScripts(filtered);
 
-                    // Set default enabled method
-                    if (filtered.stripe?.enabled) setPaymentMethod('stripe');
-                    else if (filtered.razorpay?.enabled) setPaymentMethod('razorpay');
-                    else if (filtered.paypal?.enabled) setPaymentMethod('paypal');
-                    else if (filtered.cashfree?.enabled) setPaymentMethod('cashfree');
-                    else if (filtered.dodo?.enabled) setPaymentMethod('dodo');
+                    // Initial default based on Country
+                    if (country === 'India') {
+                        if (filtered.razorpay) setPaymentMethod('razorpay');
+                        else if (filtered.cashfree) setPaymentMethod('cashfree');
+                    } else {
+                        if (filtered.dodo) setPaymentMethod('dodo');
+                        else if (filtered.paypal) setPaymentMethod('paypal');
+                        else if (filtered.stripe) setPaymentMethod('stripe');
+                    }
                 }
             } else {
                 setGateways(null);
@@ -185,19 +201,24 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
     };
 
-    // ── Logic: Math (Subtotal, GST, Discount) ───────────────
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    
+    // Convert subtotal to regional details
+    // const regionalSubtotal = getPaymentDetails(subtotal);
     
     const taxRate = 0.18; 
     const taxAmount = subtotal * taxRate;
+    // const regionalTax = getPaymentDetails(taxAmount);
 
     const discountAmount = appliedCoupon 
         ? (appliedCoupon.discount_type === 'percent' 
             ? (subtotal * (appliedCoupon.discount_value / 100)) 
             : appliedCoupon.discount_value)
         : 0;
+    // const regionalDiscount = getPaymentDetails(discountAmount);
 
     const total = subtotal + taxAmount - discountAmount;
+    const regionalTotal = getPaymentDetails(total);
     const hasPhysical = cart.some(i => i.type === 'physical');
 
     // ── Coupon Validation ──────────────────────────────────
@@ -216,7 +237,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                 toast.error('Invalid or expired coupon code.');
                 setAppliedCoupon(null);
             } else if (data.min_order_amount > subtotal) {
-                toast.error(`Min order of €${data.min_order_amount} required for this coupon.`);
+                toast.error(`Min order of ${formatPrice(data.min_order_amount)} required for this coupon.`);
                 setAppliedCoupon(null);
             } else {
                 setAppliedCoupon(data);
@@ -247,6 +268,8 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                 tax_amount: taxAmount,
                 discount_amount: discountAmount,
                 total_amount: total,
+                regional_amount: regionalTotal.amount,
+                regional_currency: regionalTotal.currency,
                 coupon_id: appliedCoupon?.id || null,
                 currency: 'EUR',
                 status: storeMode === 'beta' ? 'paid' : 'pending',
@@ -286,7 +309,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         // 3. Handle Live Payment
         if (storeMode === 'live') {
             if (paymentMethod === 'razorpay') {
-                await handleRazorpay(orderData.id, total);
+                await handleRazorpay(orderData.id, regionalTotal.amount, regionalTotal.currency);
             } else if (paymentMethod === 'paypal') {
                 // PayPal for store requires a hosted payment link configured in Admin Panel
                 // or rendering the PayPal SDK button — not supported as inline flow here.
@@ -294,11 +317,11 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                 setIsPlacing(false);
                 return;
             } else if (paymentMethod === 'cashfree') {
-                handleCashfree(orderData.id, total);
+                handleCashfree(orderData.id, regionalTotal.amount, regionalTotal.currency);
             } else if (paymentMethod === 'dodo') {
-                handleDodoPayment(orderData.id, total);
+                handleDodoPayment(orderData.id, regionalTotal.amount, regionalTotal.currency);
             } else {
-                await handleStripe(orderData.id, total);
+                await handleStripe(orderData.id, regionalTotal.amount, regionalTotal.currency);
             }
             return;
         }
@@ -307,7 +330,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         proceedToConfirm(orderData.id);
     };
 
-    const handleRazorpay = async (orderId: string, amount: number) => {
+    const handleRazorpay = async (orderId: string, amount: number, currencyCode: string) => {
         try {
             const { data: configData } = await (supabase as any).rpc('get_payment_config');
             if (!configData?.razorpay?.key_id) throw new Error('Razorpay not configured');
@@ -315,7 +338,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
             const options = {
                 key: configData.razorpay.key_id,
                 amount: Math.round(amount * 100),
-                currency: 'EUR',
+                currency: currencyCode,
                 name: 'Italostudy Store',
                 description: `Order #${orderId.substring(0, 8)}`,
                 handler: async (response: any) => {
@@ -332,7 +355,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
     };
 
-    const handleStripe = async (orderId: string, amount: number) => {
+    const handleStripe = async (_orderId: string, _amount: number, _currencyCode: string) => {
         try {
             if (!gateways?.stripe?.public_key) throw new Error('Stripe is not configured');
 
@@ -348,13 +371,13 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
     };
 
-    const handleCashfree = async (orderId: string, amount: number) => {
+    const handleCashfree = async (_orderId: string, amount: number, currencyCode: string) => {
         setIsPlacing(true);
         try {
             // 1. Create a "shadow" transaction in the transactions table
             const { data: rpcData, error: rpcError } = await (supabase as any).rpc('create_cashfree_order', {
                 p_amount: amount,
-                p_currency: 'EUR',
+                p_currency: currencyCode,
                 p_plan_id: 'STORE_ORDER',
                 p_duration_value: 1,
                 p_duration_unit: 'months'
@@ -370,7 +393,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                 body: {
                     transactionId: transactionId,
                     amount: amount,
-                    currency: 'EUR',
+                    currency: currencyCode,
                     customerPhone: phone
                 }
             });
@@ -387,13 +410,13 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
     };
 
-    const handleDodoPayment = async (orderId: string, amount: number) => {
+    const handleDodoPayment = async (orderId: string, amount: number, currencyCode: string) => {
         setIsPlacing(true);
         try {
             // 1. Create a "shadow" transaction in the transactions table (required by Dodo Edge Function)
             const { data: rpcData, error: rpcError } = await (supabase as any).rpc('create_dodo_order', {
                 p_amount: amount,
-                p_currency: 'EUR',
+                p_currency: currencyCode,
                 p_plan_id: 'STORE_ORDER',
                 p_duration_value: 1,
                 p_duration_unit: 'months'
@@ -409,7 +432,8 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                 body: {
                     transactionId: transactionId,
                     amount: amount,
-                    currency: 'EUR'
+                    currency: currencyCode,
+                    storeOrderId: orderId
                 }
             });
 
@@ -534,7 +558,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                                             <span className="w-7 text-center text-xs font-black">{item.quantity}</span>
                                                             <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:bg-slate-50 rounded-md transition-colors"><Plus className="w-3 h-3" /></button>
                                                         </div>
-                                                        <span className="text-sm font-black text-[#0f172a]">€{(item.price * item.quantity).toFixed(2)}</span>
+                                                        <span className="text-sm font-black text-[#0f172a]">{formatPrice(item.price * item.quantity)}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -546,7 +570,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                     <div className="p-6 border-t border-slate-100 space-y-4 shrink-0 bg-white">
                                         <div className="flex justify-between items-center px-1">
                                             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total</span>
-                                            <span className="text-2xl font-black text-[#0f172a]">€{subtotal.toFixed(2)}</span>
+                                            <span className="text-2xl font-black text-[#0f172a]">{formatPrice(subtotal)}</span>
                                         </div>
                                         <button
                                             onClick={() => setStep('details')}
@@ -570,21 +594,21 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                         <div className="space-y-2">
                                             <div className="flex justify-between text-xs font-semibold text-slate-400">
                                                 <span>Subtotal</span>
-                                                <span className="text-white">€{subtotal.toFixed(2)}</span>
+                                                <span className="text-white">{formatPrice(subtotal)}</span>
                                             </div>
                                             <div className="flex justify-between text-xs font-semibold text-slate-400">
                                                 <span>Tax (GST 18%)</span>
-                                                <span className="text-white">€{taxAmount.toFixed(2)}</span>
+                                                <span className="text-white">{formatPrice(taxAmount)}</span>
                                             </div>
                                             {appliedCoupon && (
                                                 <div className="flex justify-between text-xs font-bold text-emerald-400">
                                                     <span>Coupon Discount ({appliedCoupon.code})</span>
-                                                    <span>- €{discountAmount.toFixed(2)}</span>
+                                                    <span>- {formatPrice(discountAmount)}</span>
                                                 </div>
                                             )}
                                             <div className="border-t border-white/10 pt-3 mt-3 flex justify-between items-center">
                                                 <span className="font-black uppercase tracking-widest text-[11px]">Grand Total</span>
-                                                <span className="text-2xl font-black text-white">€{total.toFixed(2)}</span>
+                                                <span className="text-2xl font-black text-white">{formatPrice(total)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -707,7 +731,19 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                                                 <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-300 group-focus-within:text-indigo-600 transition-colors" />
                                                                 <select 
                                                                     value={country} 
-                                                                    onChange={e => setCountry(e.target.value)} 
+                                                                    onChange={e => {
+                                                                        const c = e.target.value;
+                                                                        setCountry(c);
+                                                                        // Auto-switch payment method when country changes
+                                                                        if (c === 'India') {
+                                                                            if (gateways?.razorpay) setPaymentMethod('razorpay');
+                                                                            else if (gateways?.cashfree) setPaymentMethod('cashfree');
+                                                                        } else {
+                                                                            if (gateways?.dodo) setPaymentMethod('dodo');
+                                                                            else if (gateways?.paypal) setPaymentMethod('paypal');
+                                                                            else if (gateways?.stripe) setPaymentMethod('stripe');
+                                                                        }
+                                                                    }} 
                                                                     className="w-full h-11 md:h-12 pl-11 pr-4 rounded-2xl bg-slate-50 border border-transparent text-xs font-bold focus:bg-white focus:border-indigo-100 transition-all outline-none appearance-none"
                                                                 >
                                                                     <option>Italy</option>
@@ -759,82 +795,95 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                         </div>
 
                                         {storeMode === 'live' && gateways ? (
-                                            <div className="grid grid-cols-2 gap-3">
-                                                {gateways.stripe?.enabled && (
-                                                    <button
-                                                        onClick={() => setPaymentMethod('stripe')}
-                                                        className={cn(
-                                                            "p-4 rounded-2xl border-2 transition-all text-left",
-                                                            paymentMethod === 'stripe' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                            <div className="space-y-6">
+                                                {/* Global Payment Methods */}
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Global Payment Methods</label>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        {gateways.dodo?.enabled && (
+                                                            <button
+                                                                onClick={() => setPaymentMethod('dodo')}
+                                                                className={cn(
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    paymentMethod === 'dodo' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                                )}
+                                                            >
+                                                                <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center mb-2 shadow-sm text-white">
+                                                                    <Smartphone className="w-4 h-4" />
+                                                                </div>
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Dodo Pay</p>
+                                                                <p className="text-[9px] text-slate-400 font-bold">Stripe / GPay / Apple</p>
+                                                            </button>
                                                         )}
-                                                    >
-                                                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                            <CreditCard className="w-4 h-4 text-indigo-600" />
-                                                        </div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Stripe</p>
-                                                        <p className="text-[9px] text-slate-400 font-bold">Cards / Global</p>
-                                                    </button>
-                                                )}
-                                                {gateways.razorpay?.enabled && (
-                                                    <button
-                                                        onClick={() => setPaymentMethod('razorpay')}
-                                                        className={cn(
-                                                            "p-4 rounded-2xl border-2 transition-all text-left",
-                                                            paymentMethod === 'razorpay' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                        {gateways.paypal?.enabled && (
+                                                            <button
+                                                                onClick={() => setPaymentMethod('paypal')}
+                                                                className={cn(
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    paymentMethod === 'paypal' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                                )}
+                                                            >
+                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
+                                                                    <CreditCard className="w-4 h-4 text-blue-600" />
+                                                                </div>
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">PayPal</p>
+                                                                <p className="text-[9px] text-slate-400 font-bold">Global Wallet</p>
+                                                            </button>
                                                         )}
-                                                    >
-                                                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                            <Zap className="w-4 h-4 text-indigo-600" />
-                                                        </div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Razorpay</p>
-                                                        <p className="text-[9px] text-slate-400 font-bold">UPI / Cards</p>
-                                                    </button>
-                                                )}
-                                                {gateways.paypal?.enabled && (
-                                                    <button
-                                                        onClick={() => setPaymentMethod('paypal')}
-                                                        className={cn(
-                                                            "p-4 rounded-2xl border-2 transition-all text-left",
-                                                            paymentMethod === 'paypal' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                        {gateways.stripe?.enabled && (
+                                                            <button
+                                                                onClick={() => setPaymentMethod('stripe')}
+                                                                className={cn(
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    paymentMethod === 'stripe' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                                )}
+                                                            >
+                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
+                                                                    <CreditCard className="w-4 h-4 text-indigo-600" />
+                                                                </div>
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Stripe</p>
+                                                                <p className="text-[9px] text-slate-400 font-bold">Cards / Global</p>
+                                                            </button>
                                                         )}
-                                                    >
-                                                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                            <CreditCard className="w-4 h-4 text-blue-600" />
-                                                        </div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">PayPal</p>
-                                                        <p className="text-[9px] text-slate-400 font-bold">Global Wallet</p>
-                                                    </button>
-                                                )}
-                                                {gateways.cashfree?.enabled && (
-                                                    <button
-                                                        onClick={() => setPaymentMethod('cashfree')}
-                                                        className={cn(
-                                                            "p-4 rounded-2xl border-2 transition-all text-left",
-                                                            paymentMethod === 'cashfree' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                    </div>
+                                                </div>
+
+                                                {/* India Payment Methods */}
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">India Payment Methods</label>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        {gateways.razorpay?.enabled && (
+                                                            <button
+                                                                onClick={() => setPaymentMethod('razorpay')}
+                                                                className={cn(
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    paymentMethod === 'razorpay' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                                )}
+                                                            >
+                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
+                                                                    <Zap className="w-4 h-4 text-indigo-600" />
+                                                                </div>
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Razorpay</p>
+                                                                <p className="text-[9px] text-slate-400 font-bold">UPI / Cards (India)</p>
+                                                            </button>
                                                         )}
-                                                    >
-                                                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
-                                                            <Globe className="w-4 h-4 text-indigo-600" />
-                                                        </div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Cashfree</p>
-                                                        <p className="text-[9px] text-slate-400 font-bold">Cards / UPI</p>
-                                                    </button>
-                                                )}
-                                                {gateways.dodo?.enabled && (
-                                                    <button
-                                                        onClick={() => setPaymentMethod('dodo')}
-                                                        className={cn(
-                                                            "p-4 rounded-2xl border-2 transition-all text-left",
-                                                            paymentMethod === 'dodo' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                        {gateways.cashfree?.enabled && (
+                                                            <button
+                                                                onClick={() => setPaymentMethod('cashfree')}
+                                                                className={cn(
+                                                                    "p-4 rounded-2xl border-2 transition-all text-left",
+                                                                    paymentMethod === 'cashfree' ? "border-indigo-600 bg-indigo-50/50" : "border-slate-100 hover:border-slate-200"
+                                                                )}
+                                                            >
+                                                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-2 shadow-sm">
+                                                                    <Globe className="w-4 h-4 text-indigo-600" />
+                                                                </div>
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Cashfree</p>
+                                                                <p className="text-[9px] text-slate-400 font-bold">UPI / Netbanking</p>
+                                                            </button>
                                                         )}
-                                                    >
-                                                        <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center mb-2 shadow-sm text-white">
-                                                            <Check className="w-4 h-4" />
-                                                        </div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Dodo Pay</p>
-                                                        <p className="text-[9px] text-slate-400 font-bold">Global / Cards</p>
-                                                    </button>
-                                                )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         ) : storeMode === 'live' ? (
                                             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center">
@@ -868,7 +917,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                                         {isPlacing ? (
                                             <><Loader2 className="w-4 h-4 animate-spin" /> Finalizing...</>
                                         ) : (
-                                            <>Place Order · €{total.toFixed(2)}</>
+                                            <>Place Order · {formatPrice(total)}</>
                                         )}
                                     </button>
                                     <button onClick={() => setStep('cart')} className="w-full text-center text-[10px] font-black uppercase tracking-widest text-[#0f172a] hover:underline transition-all">

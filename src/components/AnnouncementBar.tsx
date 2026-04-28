@@ -54,7 +54,6 @@ interface AnnouncementBarProps {
 export default function AnnouncementBar({ previewData }: AnnouncementBarProps) {
     const location = useLocation();
     const navigate = useNavigate();
-    const { activeExam } = { activeExam: null as any };
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [dismissedIds, setDismissedIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(!previewData);
@@ -86,7 +85,7 @@ export default function AnnouncementBar({ previewData }: AnnouncementBarProps) {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [location.pathname, previewData, activeExam?.id]);
+    }, [location.pathname, previewData]);
 
     const fetchAnnouncements = async () => {
         try {
@@ -98,7 +97,7 @@ export default function AnnouncementBar({ previewData }: AnnouncementBarProps) {
                 return;
             }
 
-            const isStore = path.startsWith('/store') || path.startsWith('/mobile/store');
+            const isStore = true; // This is the store project
             const isDashboard = path.includes('/dashboard');
 
             const { data, error } = await supabase
@@ -117,21 +116,16 @@ export default function AnnouncementBar({ previewData }: AnnouncementBarProps) {
                     if (target === 'dashboard' && isDashboard) return true;
                     if (target === 'store' && isStore) return true;
                     
-                    // Match specific exam IDs (e.g., 'imat', 'cent-s') only on dashboard
-                    if (isDashboard && activeExam?.id === target) return true;
-                    
                     // Public Popup Logic
-                    if (!isDashboard) {
-                        const isHome = path === '/';
-                        const isPricing = path === '/pricing';
-                        const isBlog = path === '/blog' || path.startsWith('/blog/');
-                        
-                        if (target === 'public_popup' && !isStore) return true;
-                        if (target === 'public_popup_home' && isHome) return true;
-                        if (target === 'public_popup_store' && isStore) return true;
-                        if (target === 'public_popup_pricing' && isPricing) return true;
-                        if (target === 'public_popup_blog' && isBlog) return true;
-                    }
+                    const isHome = path === '/';
+                    const isPricing = path === '/pricing';
+                    const isBlog = path === '/blog' || path.startsWith('/blog/');
+                    
+                    if (target === 'public_popup') return true;
+                    if (target === 'public_popup_home' && isHome) return true;
+                    if (target === 'public_popup_store' && isStore) return true;
+                    if (target === 'public_popup_pricing' && isPricing) return true;
+                    if (target === 'public_popup_blog' && isBlog) return true;
                     
                     return false;
                 });

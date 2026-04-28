@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import CartOverlay from '@/components/store/CartOverlay';
 import { StoreGridSkeleton } from '@/components/SkeletonLoader';
+import { useCurrency } from '@/hooks/useCurrencyContext';
 
 interface OrderItem {
     id: string;
@@ -42,6 +43,8 @@ interface Order {
     tracking_url: string | null;
     admin_notes: string | null;
     payment_method: string | null;
+    regional_amount: number | null;
+    regional_currency: string | null;
     order_items: OrderItem[];
 }
 
@@ -54,9 +57,10 @@ const statusConfig: Record<string, { label: string; icon: any; color: string; bg
     refunded:  { label: 'Refunded',  icon: RefreshCw,    color: 'text-slate-600',  bg: 'bg-slate-50 border-slate-200' },
 };
 
-export default function MyOrders({ isMobileView = false }: { isMobileView?: boolean }) {
+export default function MyOrders({ isMobileView: _isMobileView = false }: { isMobileView?: boolean }) {
     const navigate = useNavigate();
     const { user } = useAuth() as any;
+    const { formatPrice } = useCurrency();
 
     const [orders,     setOrders]     = useState<Order[]>([]);
     const [isLoading,  setIsLoading]  = useState(true);
@@ -236,16 +240,16 @@ export default function MyOrders({ isMobileView = false }: { isMobileView?: bool
     <div class="total-section">
         <div class="total-row">
             <span>Subtotal (Net)</span>
-            <span>&euro;${Number(order.subtotal || order.total_amount).toFixed(2)}</span>
+            <span>${formatPrice(order.subtotal || order.total_amount, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
         </div>
         <div class="total-row">
             <span>GST / Tax (18%)</span>
-            <span>&euro;${Number(order.tax_amount || 0).toFixed(2)}</span>
+            <span>${formatPrice(order.tax_amount || 0, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
         </div>
         ${order.discount_amount > 0 ? `
         <div class="total-row discount">
             <span>Coupon Discount</span>
-            <span>- &euro;${Number(order.discount_amount).toFixed(2)}</span>
+            <span>- ${formatPrice(order.discount_amount, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
         </div>
         ` : ''}
         <div class="total-row grand">
@@ -253,7 +257,7 @@ export default function MyOrders({ isMobileView = false }: { isMobileView?: bool
                 <span style="font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:0.1em; font-size:11px">Grand Total</span>
                 <span style="font-size:9px; font-weight:700; color:#94a3b8; margin-top:2px; text-transform:uppercase; letter-spacing:0.05em">Paid via ${order.payment_method || 'Secure Gateway'}</span>
             </div>
-            <span>&euro;${Number(order.total_amount).toFixed(2)}</span>
+            <span>${formatPrice(order.total_amount, order.regional_currency || order.currency, order.regional_currency || order.currency)}</span>
         </div>
     </div>
 
@@ -420,7 +424,11 @@ export default function MyOrders({ isMobileView = false }: { isMobileView?: bool
                                         {/* Total */}
                                         <div className="shrink-0">
                                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
-                                            <p className="text-sm font-black text-[#0f172a]">€{Number(order.total_amount).toFixed(2)}</p>
+                                            <p className="text-sm font-black text-[#0f172a]">
+                                                {order.regional_currency && order.regional_amount 
+                                                    ? formatPrice(order.regional_amount, order.regional_currency, order.regional_currency)
+                                                    : formatPrice(order.total_amount)}
+                                            </p>
                                         </div>
 
                                         {/* Status */}
@@ -483,7 +491,7 @@ export default function MyOrders({ isMobileView = false }: { isMobileView?: bool
                                                                 <div className="flex-1 min-w-0">
                                                                     <p className="text-sm font-bold text-slate-800 line-clamp-1">{item.product?.title}</p>
                                                                     <p className="text-[10px] text-slate-400 font-medium">
-                                                                        {item.quantity} × €{item.unit_price?.toFixed(2)}
+                                                                        {item.quantity} × {formatPrice(item.unit_price)}
                                                                     </p>
                                                                 </div>
                                                                 <span className={cn(
@@ -617,9 +625,9 @@ export default function MyOrders({ isMobileView = false }: { isMobileView?: bool
                     <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
                         © {new Date().getFullYear()} Italostudy · All rights reserved
                     </p>
-                    <Link to="/" className="text-[10px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 transition-colors">
+                    <a href="https://italostudy.com" className="text-[10px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 transition-colors">
                         ← Back to Italostudy
-                    </Link>
+                    </a>
                 </div>
             </footer>
 
