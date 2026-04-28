@@ -337,7 +337,7 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
 
                 {/* ── Hero Banner ──────────────────────────────── */}
                 {!isSearching && (
-                    <div className="relative md:rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-800 select-none -mx-4 md:mx-0 min-h-[120px] md:min-h-[220px]">
+                    <div className="relative rounded-2xl md:rounded-3xl overflow-hidden bg-slate-200 dark:bg-slate-800 select-none min-h-[180px] md:min-h-[220px] shadow-sm">
                         {banners.length > 0 ? (
                             <>
                                 <AnimatePresence mode="wait">
@@ -361,22 +361,19 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
                                             />
                                         </picture>
                                         {(banners[currentBanner].title || banners[currentBanner].badge_text) && (
-                                            <div className={cn(
-                                                "absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-transparent flex-col justify-end p-5 md:p-8 pointer-events-none",
-                                                banners[currentBanner].mobile_image_url ? "hidden md:flex" : "flex"
-                                            )}>
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-6 md:p-10 pointer-events-none">
                                                 {banners[currentBanner].badge_text && (
                                                     <span className="mb-2 px-2.5 py-1 rounded-full bg-amber-400 text-[9px] font-black uppercase tracking-widest text-slate-900 w-fit">
                                                         {banners[currentBanner].badge_text}
                                                     </span>
                                                 )}
                                                 {banners[currentBanner].title && (
-                                                    <h2 className="text-white text-xl md:text-4xl font-black leading-tight max-w-[85%] md:max-w-lg drop-shadow-xl">
+                                                    <h2 className="text-white text-2xl md:text-5xl font-black leading-tight max-w-[90%] md:max-w-2xl drop-shadow-2xl">
                                                         {banners[currentBanner].title}
                                                     </h2>
                                                 )}
                                                 {banners[currentBanner].subtitle && (
-                                                    <p className="text-white/90 mt-1.5 md:mt-2 text-[11px] md:text-sm font-medium line-clamp-1">{banners[currentBanner].subtitle}</p>
+                                                    <p className="text-white/90 mt-2 md:mt-3 text-xs md:text-base font-medium leading-relaxed">{banners[currentBanner].subtitle}</p>
                                                 )}
                                             </div>
                                         )}

@@ -135,8 +135,12 @@ export default function Auth() {
             {/* ── Right Side: Auth Form ── */}
             <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative z-20 h-full overflow-y-auto lg:overflow-hidden">
                 {/* Mobile Header */}
-                <div className="lg:hidden p-6 flex items-center justify-between shrink-0">
-                    <img src="/logo.webp" alt="Italostudy" className="h-7" />
+                <div className="lg:hidden p-6 flex items-center justify-between shrink-0 border-b border-slate-50">
+                    <div className="flex items-center gap-2.5">
+                        <img src="/logo.webp" alt="Italostudy" className="h-6" />
+                        <div className="w-px h-4 bg-slate-200" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Store</span>
+                    </div>
                     <button 
                         onClick={() => navigate('/')}
                         className="p-2 rounded-xl hover:bg-slate-50 transition-colors"
