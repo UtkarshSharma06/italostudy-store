@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    CheckCircle2, XCircle, ArrowRight, ShieldCheck,
-    Loader2, Copy, Check, Lock, Zap,
-    Package, Sparkles, GraduationCap, Rocket, BookOpen,
+    XCircle, ArrowRight, ShieldCheck,
+    Loader2, Copy, Check,
+    Package, BookOpen,
     HelpCircle, Crown, ShoppingBag
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import confetti from 'canvas-confetti';
 
