@@ -50,8 +50,32 @@ export default function PaymentCallback() {
                 if (data.error) throw new Error(data.error);
 
                 if (data.success) {
+                    // Try to finalize store order if we have a pending id
+                    const pendingStoreOrderId = sessionStorage.getItem('dodo_pending_store_order_id');
+                    if (pendingStoreOrderId) {
+                        try {
+                            const { error: finalizeErr } = await supabase.functions.invoke('finalize-store-order', {
+                                body: { 
+                                    store_order_id: pendingStoreOrderId, 
+                                    payment_id: paymentId || orderId,
+                                    gateway: 'dodo'
+                                }
+                            });
+                            if (finalizeErr) console.error('finalize-store-order edge error:', finalizeErr);
+                        } catch (finalizeException) {
+                            console.error('finalize-store-order invoke error:', finalizeException);
+                        }
+                        sessionStorage.removeItem('dodo_pending_store_order_id');
+                    }
+
                     setStage('success');
                     triggerConfetti();
+                    // Clear the cart — for redirect-based gateways (Dodo/Cashfree)
+                    // the CartOverlay's proceedToConfirm() never runs, so we clear here
+                    try {
+                        localStorage.setItem('italostudy_cart', '[]');
+                        window.dispatchEvent(new Event('cart-updated'));
+                    } catch { /* silent */ }
                 } else {
                     throw new Error(data.message || 'Payment could not be confirmed.');
                 }

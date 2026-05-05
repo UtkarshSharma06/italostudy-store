@@ -4,7 +4,6 @@ import {
     ShoppingBag,
     ChevronRight,
     ChevronLeft,
-    Search,
     X,
     Check,
     Truck,
@@ -13,19 +12,21 @@ import {
     Package,
     LogIn,
     ClipboardList,
-    Menu,
-    Star
+    Star,
+    Heart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import CartOverlay from '@/components/store/CartOverlay';
-import { StoreGridSkeleton, CategoryNavSkeleton, CategorySidebarSkeleton, TrustStripSkeleton } from '@/components/SkeletonLoader';
+import SocialProofToasts from '@/components/store/SocialProofToasts';
+
 import Layout from '@/components/Layout';
 import StoreFooter from '@/components/store/StoreFooter';
 import StoreHeader from '@/components/store/StoreHeader';
 import { useCurrency } from '@/hooks/useCurrencyContext';
+import SEOHead from '@/components/SEOHead';
 
 // ── Types ─────────────────────────────────────────────────
 interface Product {
@@ -39,6 +40,9 @@ interface Product {
     images: string[];
     category_id: string | null;
     is_active: boolean;
+    stock_quantity: number;
+    avgRating?: number | null;
+    reviewCount?: number;
 }
 interface Category { id: string; name: string; slug: string; }
 interface Banner {
@@ -85,6 +89,9 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
     const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
     const [currentBanner,        setCurrentBanner]        = useState(0);
     const [isMobileMenuOpen,     setIsMobileMenuOpen]     = useState(false);
+    const [recentlyViewed,       setRecentlyViewed]       = useState<Product[]>([]);
+
+
 
     // ── Auto-scroll announcement ticker (Not used but kept for logic)
     /*
@@ -115,21 +122,53 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
 
     const fetchAll = async () => {
         setIsLoading(true);
-        const [pR, cR, bR, sR] = await Promise.all([
+        const [pR, cR, bR, sR, rR] = await Promise.all([
             (supabase.from('store_products' as any)     as any).select('*').eq('is_active', true),
             (supabase.from('store_categories' as any)   as any).select('*').order('name'),
             (supabase.from('store_banners' as any)      as any).select('*').eq('is_active', true).order('display_order'),
             (supabase.from('store_home_sections' as any)as any).select('*').eq('is_active', true).order('display_order'),
+            (supabase.from('store_reviews' as any)      as any).select('product_id, rating').eq('is_approved', true)
         ]);
-        setProducts   ((pR.data as any) || []);
+
+        const reviewData = (rR.data as any) || [];
+        const productData = (pR.data as any) || [];
+        
+        const productsWithRatings = productData.map((p: any) => {
+            const pReviews = reviewData.filter((r: any) => r.product_id === p.id);
+            const avgRating = pReviews.length > 0 
+                ? (pReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / pReviews.length)
+                : null;
+            return { ...p, avgRating, reviewCount: pReviews.length };
+        });
+
+        setProducts   (productsWithRatings);
         setCategories ((cR.data as any) || []);
         setBanners    ((bR.data as any) || []);
         setSections   ((sR.data as any) || []);
         setIsLoading(false);
+        
+        // Fetch recently viewed
+        const viewedIds = JSON.parse(localStorage.getItem('italostudy_recently_viewed') || '[]');
+        if (viewedIds.length > 0) {
+            const { data: rvData } = await (supabase.from('store_products' as any) as any)
+                .select('*')
+                .in('id', viewedIds)
+                .eq('is_active', true);
+            if (rvData) {
+                const sorted = rvData.sort((a: any, b: any) => viewedIds.indexOf(a.id) - viewedIds.indexOf(b.id));
+                setRecentlyViewed(sorted as any);
+            }
+        }
     };
 
     const handleAddToCart = (product: Product, e: React.MouseEvent) => {
         e.stopPropagation();
+        
+        const maxStock = product.stock_quantity ?? 999;
+        if (maxStock < 1) {
+            toast.error('Product is out of stock');
+            return;
+        }
         
         const cart = getCart();
         const existing = cart.find((i: any) => i.id === product.id);
@@ -137,6 +176,10 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
         
         if (existing) {
             const idx = updated.findIndex((i: any) => i.id === product.id);
+            if (updated[idx].quantity >= maxStock) {
+                toast.error(`Only ${maxStock} in stock available`);
+                return;
+            }
             updated[idx].quantity += 1;
         } else {
             updated.push({ 
@@ -169,352 +212,343 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
     const productsForSection = (s: HomeSection) =>
         s.category_id ? products.filter(p => p.category_id === s.category_id) : products;
 
-    // ── Announcement text ──────────────────────────────────
-    /*
-    const announcements = [
-        '✨  Free digital access on all IMAT 2025 bundles!',
-        '📦  Physical orders shipped globally via express delivery.',
-        '🎓  Join 5,000+ students who trust Italostudy resources.',
-        '🔐  100% secure checkout powered by Stripe.',
-    ];
-    */
-    // const announcementText = announcements.join('     •     ');
-
     return (
-        <Layout showHeader={false} showFooter={false} isLoading={isLoading}>
+        <Layout showHeader={false} showFooter={false}>
+            <SEOHead 
+                title="CENT-S & IMAT 2026 Preparation | Mock Tests & Books"
+                description="The #1 store for CENT-S exam preparation books, IMAT 2026 syllabus guides, and mock tests. Get instant PDF downloads and expert-curated study kits for Italian universities."
+                keywords={['cent-s mock test', 'cents exam preparation book', 'imat syllabus 2026', 'cents questions pdf', 'study in italy']}
+            />
             <div className="min-h-screen bg-[#f5f5f5] dark:bg-slate-950 font-sans flex flex-col">
 
+                        <StoreHeader 
+                            user={user} 
+                            session={session} 
+                            cartCount={cartCount} 
+                            isCartOpen={isCartOpen} 
+                            setIsCartOpen={setIsCartOpen} 
+                            navigate={navigate} 
+                            searchQuery={searchQuery}
+                            setSearchQuery={setSearchQuery}
+                            setIsMobileMenuOpen={setIsMobileMenuOpen}
+                        />
 
-            <StoreHeader 
-                user={user} 
-                session={session} 
-                cartCount={cartCount} 
-                isCartOpen={isCartOpen} 
-                setIsCartOpen={setIsCartOpen} 
-                navigate={navigate} 
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                setIsMobileMenuOpen={setIsMobileMenuOpen}
-            />
-
-            {/* ── Category Nav Bar ───────────────────────────── */}
-            <div className="bg-white border-b border-slate-100">
-                <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 h-11 overflow-x-auto scrollbar-none">
-                    {isLoading ? (
-                        <CategoryNavSkeleton />
-                    ) : (
-                        <>
-                            <button
-                                onClick={() => setActiveCategoryFilter(null)}
-                                className={cn(
-                                    "shrink-0 flex items-center gap-1 px-3 md:px-4 h-7 md:h-8 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
-                                    !activeCategoryFilter
-                                        ? "bg-[#0f172a] text-white"
-                                        : "text-slate-600 hover:bg-slate-50"
-                                )}
-                            >
-                                All
-                            </button>
-                            <Link to="/products"
-                                className="shrink-0 flex items-center gap-1 px-3 md:px-4 h-7 md:h-8 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 whitespace-nowrap transition-all">
-                                Browse All →
-                            </Link>
-                            {categories.map(cat => (
-                                <button
-                                    key={cat.id}
-                                    onClick={() => setActiveCategoryFilter(cat.id === activeCategoryFilter ? null : cat.id)}
-                                    className={cn(
-                                        "shrink-0 flex items-center gap-1 px-3 md:px-4 h-7 md:h-8 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
-                                        activeCategoryFilter === cat.id
-                                            ? "bg-[#0f172a] text-white"
-                                            : "text-slate-600 hover:bg-slate-50"
-                                    )}
-                                >
-                                    {cat.name}
-                                    <ChevronRight className="w-3 h-3 opacity-40 md:block hidden" />
-                                </button>
-                            ))}
-                        </>
-                    )}
-                </div>
-            </div>
-
-            {/* ─── Page Body ───────────────────────────────────── */}
-            <div className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 space-y-10">
-
-                {/* ── Hero Banner ──────────────────────────────── */}
-                {!isSearching && (
-                    <div className="relative rounded-2xl md:rounded-3xl overflow-hidden bg-slate-200 dark:bg-slate-800 select-none min-h-[180px] md:min-h-[220px] shadow-sm">
-                        {banners.length > 0 ? (
-                            <>
-                                <AnimatePresence mode="wait">
-                                    <motion.div
-                                        key={currentBanner}
-                                        initial={{ opacity: 0, x: 60 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: -60 }}
-                                        transition={{ duration: 0.35 }}
-                                        className="cursor-pointer h-full"
-                                        onClick={() => banners[currentBanner].link_url && navigate(banners[currentBanner].link_url!)}
-                                    >
-                                        <picture className="block w-full h-full">
-                                            {banners[currentBanner].mobile_image_url && (
-                                                <source media="(max-width: 768px)" srcSet={banners[currentBanner].mobile_image_url} />
-                                            )}
-                                            <img
-                                                src={banners[currentBanner].image_url}
-                                                alt={banners[currentBanner].title || 'Banner'}
-                                                className="w-full h-full object-cover max-h-[200px] md:max-h-[480px]"
-                                            />
-                                        </picture>
-                                        {(banners[currentBanner].title || banners[currentBanner].badge_text) && (
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-6 md:p-10 pointer-events-none">
-                                                {banners[currentBanner].badge_text && (
-                                                    <span className="mb-2 px-2.5 py-1 rounded-full bg-amber-400 text-[9px] font-black uppercase tracking-widest text-slate-900 w-fit">
-                                                        {banners[currentBanner].badge_text}
-                                                    </span>
-                                                )}
-                                                {banners[currentBanner].title && (
-                                                    <h2 className="text-white text-2xl md:text-5xl font-black leading-tight max-w-[90%] md:max-w-2xl drop-shadow-2xl">
-                                                        {banners[currentBanner].title}
-                                                    </h2>
-                                                )}
-                                                {banners[currentBanner].subtitle && (
-                                                    <p className="text-white/90 mt-2 md:mt-3 text-xs md:text-base font-medium leading-relaxed">{banners[currentBanner].subtitle}</p>
-                                                )}
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                </AnimatePresence>
-
-                                {banners.length > 1 && (
+                        {/* ── Category Nav Bar ───────────────────────────── */}
+                        <div className="bg-white border-b border-slate-100">
+                            <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 h-11 overflow-x-auto scrollbar-none">
+                                {categories.length > 0 && (
                                     <>
-                                        <button onClick={() => setCurrentBanner(c => (c - 1 + banners.length) % banners.length)}
-                                            className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-lg hover:bg-white transition-all z-10">
-                                            <ChevronLeft className="w-5 h-5 text-slate-700" />
+                                        <button
+                                            onClick={() => setActiveCategoryFilter(null)}
+                                            className={cn(
+                                                "shrink-0 flex items-center gap-1 px-3 md:px-4 h-7 md:h-8 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                                                !activeCategoryFilter
+                                                    ? "bg-[#0f172a] text-white"
+                                                    : "text-slate-600 hover:bg-slate-50"
+                                            )}
+                                        >
+                                            All
                                         </button>
-                                        <button onClick={() => setCurrentBanner(c => (c + 1) % banners.length)}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-lg hover:bg-white transition-all z-10">
-                                            <ChevronRight className="w-5 h-5 text-slate-700" />
-                                        </button>
-                                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                                            {banners.map((_, i) => (
-                                                <button key={i} onClick={() => setCurrentBanner(i)}
-                                                    className={cn("h-2 rounded-full transition-all", i === currentBanner ? "bg-white w-6" : "bg-white/50 w-2")} />
-                                            ))}
-                                        </div>
+                                        <Link to="/products"
+                                            className="shrink-0 flex items-center gap-1 px-3 md:px-4 h-7 md:h-8 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 whitespace-nowrap transition-all">
+                                            Browse All →
+                                        </Link>
+                                        {categories.map(cat => (
+                                            <button
+                                                key={cat.id}
+                                                onClick={() => setActiveCategoryFilter(cat.id === activeCategoryFilter ? null : cat.id)}
+                                                className={cn(
+                                                    "shrink-0 flex items-center gap-1 px-3 md:px-4 h-7 md:h-8 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                                                    activeCategoryFilter === cat.id
+                                                        ? "bg-[#0f172a] text-white"
+                                                        : "text-slate-600 hover:bg-slate-50"
+                                                )}
+                                            >
+                                                {cat.name}
+                                                <ChevronRight className="w-3 h-3 opacity-40 md:block hidden" />
+                                            </button>
+                                        ))}
                                     </>
                                 )}
-                            </>
-                        ) : (
-                            /* Fallback gradient banner */
-                            <div className="bg-gradient-to-r from-[#0f172a] via-slate-800 to-slate-700 p-8 md:p-16 flex items-center justify-between gap-8 h-full">
-                                <div className="space-y-3 md:space-y-4">
-                                    <span className="inline-block px-2.5 py-1 rounded-full bg-amber-400/20 text-amber-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest border border-amber-400/30">
-                                        Educational Marketplace
-                                    </span>
-                                    <h2 className="text-white text-2xl md:text-5xl font-black leading-tight">
-                                        Italostudy<br /><span className="text-amber-400">Store</span>
-                                    </h2>
-                                    <p className="text-slate-400 font-medium text-xs md:text-sm max-w-[240px] md:max-w-md line-clamp-2 md:line-clamp-none">
-                                        Premium resources for IMAT, CENT-S, TIL & every exam you're preparing for.
-                                    </p>
-                                    <Link to="/products"
-                                        className="inline-flex items-center gap-2 h-9 md:h-11 px-5 md:px-6 rounded-full bg-amber-400 text-slate-900 font-black text-[10px] md:text-xs uppercase tracking-widest hover:bg-amber-300 transition-colors shadow-xl">
-                                        Browse All <span className="hidden md:inline">Products</span> →
-                                    </Link>
-                                </div>
-                                <img src="/logo.webp" alt="Italostudy" className="h-16 md:h-24 opacity-20 brightness-0 invert hidden sm:block" />
                             </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ── Search Results ───────────────────────────── */}
-                {isSearching && (
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3 flex-wrap">
-                                <span className="font-black text-slate-900 dark:text-white text-sm">
-                                    {filteredProducts.length} results
-                                </span>
-                                {searchQuery && (
-                                    <span className="text-sm text-slate-500">
-                                        for "<span className="text-indigo-600 font-bold">{searchQuery}</span>"
-                                    </span>
-                                )}
-                                {activeCategoryFilter && (
-                                    <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 text-[10px] font-black uppercase tracking-widest">
-                                        {categories.find(c => c.id === activeCategoryFilter)?.name}
-                                    </span>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => { setSearchQuery(''); setActiveCategoryFilter(null); }}
-                                className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-1"
-                            >
-                                <X className="w-3 h-3" /> Clear
-                            </button>
                         </div>
-                        <ProductGrid
-                            products={filteredProducts} isLoading={isLoading}
-                            navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart}
-                        />
-                    </div>
-                )}
 
-                {/* ── Dynamic Sections ─────────────────────────── */}
-                {!isSearching && (
-                    sections.length === 0 ? (
-                        <div className="space-y-5">
-                            <SectionHeader title="All Products" />
-                            <ProductGrid
-                                products={products} isLoading={false}
-                                navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart}
-                            />
-                        </div>
-                    ) : (
-                        sections.map(section => {
-                            const sectionProds = productsForSection(section);
-                            if (!sectionProds.length) return null;
-                            return (
-                                <div key={section.id} className="space-y-4">
-                                    <SectionHeader
-                                        title={section.title}
-                                        subtitle={section.subtitle || undefined}
-                                        onViewAll={() => setActiveCategoryFilter(section.category_id)}
-                                    />
-                                    {section.section_type === 'scroll' && (
-                                        <HorizontalScrollRow products={sectionProds} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
-                                    )}
-                                    {section.section_type === 'grid' && (
-                                        <ProductGrid products={sectionProds} isLoading={false} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
-                                    )}
-                                    {section.section_type === 'hero_grid' && (
-                                        <HeroGrid products={sectionProds} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                        {/* ─── Page Body ───────────────────────────────────── */}
+                        <div className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 space-y-10">
+
+                            {/* ── Hero Banner ──────────────────────────────── */}
+                            {!isSearching && (
+                                <div className="relative rounded-2xl md:rounded-3xl overflow-hidden bg-slate-200 dark:bg-slate-800 select-none min-h-[180px] md:min-h-[220px] shadow-sm">
+                                    {banners.length > 0 ? (
+                                        <>
+                                            <AnimatePresence mode="wait">
+                                                <motion.div
+                                                    key={currentBanner}
+                                                    initial={{ opacity: 0, x: 60 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: -60 }}
+                                                    transition={{ duration: 0.35 }}
+                                                    className="cursor-pointer h-full"
+                                                    onClick={() => banners[currentBanner].link_url && navigate(banners[currentBanner].link_url!)}
+                                                >
+                                                    <picture className="block w-full h-full">
+                                                        {banners[currentBanner].mobile_image_url && (
+                                                            <source media="(max-width: 768px)" srcSet={banners[currentBanner].mobile_image_url} />
+                                                        )}
+                                                        <img
+                                                            src={banners[currentBanner].image_url}
+                                                            alt={banners[currentBanner].title || 'Banner'}
+                                                            className="w-full h-full object-cover max-h-[200px] md:max-h-[480px]"
+                                                        />
+                                                    </picture>
+                                                    {(banners[currentBanner].title || banners[currentBanner].badge_text) && (
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-6 md:p-10 pointer-events-none">
+                                                            {banners[currentBanner].badge_text && (
+                                                                <span className="mb-2 px-2.5 py-1 rounded-full bg-amber-400 text-[9px] font-black uppercase tracking-widest text-slate-900 w-fit">
+                                                                    {banners[currentBanner].badge_text}
+                                                                </span>
+                                                            )}
+                                                            {banners[currentBanner].title && (
+                                                                <h2 className="text-white text-2xl md:text-5xl font-black leading-tight max-w-[90%] md:max-w-2xl drop-shadow-2xl">
+                                                                    {banners[currentBanner].title}
+                                                                </h2>
+                                                            )}
+                                                            {banners[currentBanner].subtitle && (
+                                                                <p className="text-white/90 mt-2 md:mt-3 text-xs md:text-base font-medium leading-relaxed">{banners[currentBanner].subtitle}</p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </motion.div>
+                                            </AnimatePresence>
+
+                                            {banners.length > 1 && (
+                                                <>
+                                                    <button onClick={() => setCurrentBanner(c => (c - 1 + banners.length) % banners.length)}
+                                                        className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-lg hover:bg-white transition-all z-10">
+                                                        <ChevronLeft className="w-5 h-5 text-slate-700" />
+                                                    </button>
+                                                    <button onClick={() => setCurrentBanner(c => (c + 1) % banners.length)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-lg hover:bg-white transition-all z-10">
+                                                        <ChevronRight className="w-5 h-5 text-slate-700" />
+                                                    </button>
+                                                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+                                                        {banners.map((_, i) => (
+                                                            <button key={i} onClick={() => setCurrentBanner(i)}
+                                                                className={cn("h-2 rounded-full transition-all", i === currentBanner ? "bg-white w-6" : "bg-white/50 w-2")} />
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </>
+                                    ) : (
+                                        /* Fallback gradient banner */
+                                        <div className="bg-gradient-to-r from-[#0f172a] via-slate-800 to-slate-700 p-8 md:p-16 flex items-center justify-between gap-8 h-full">
+                                            <div className="space-y-3 md:space-y-4">
+                                                <span className="inline-block px-2.5 py-1 rounded-full bg-amber-400/20 text-amber-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest border border-amber-400/30">
+                                                    Educational Marketplace
+                                                </span>
+                                                <h2 className="text-white text-2xl md:text-5xl font-black leading-tight">
+                                                    Italostudy<br /><span className="text-amber-400">Store</span>
+                                                </h2>
+                                                <p className="text-slate-400 font-medium text-xs md:text-sm max-w-[240px] md:max-w-md line-clamp-2 md:line-clamp-none">
+                                                    Premium resources for IMAT, CENT-S, TIL & every exam you're preparing for.
+                                                </p>
+                                                <Link to="/products"
+                                                    className="inline-flex items-center gap-2 h-9 md:h-11 px-5 md:px-6 rounded-full bg-amber-400 text-slate-900 font-black text-[10px] md:text-xs uppercase tracking-widest hover:bg-amber-300 transition-colors shadow-xl">
+                                                    Browse All <span className="hidden md:inline">Products</span> →
+                                                </Link>
+                                            </div>
+                                            <img src="/logo.webp" alt="Italostudy" className="h-16 md:h-24 opacity-20 brightness-0 invert hidden sm:block" />
+                                        </div>
                                     )}
                                 </div>
-                            );
-                        })
-                    )
-                )}
+                            )}
 
-                {/* ── Trust strip ──────────────────────────────── */}
-                {/* ── Trust strip ──────────────────────────────── */}
-                {!isSearching && (
-                    isLoading ? (
-                        <TrustStripSkeleton />
-                    ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-6 border-t border-slate-200">
-                            {[
-                                { icon: Zap,    label: 'Instant Access',  desc: 'Digital products unlocked immediately' },
-                                { icon: Truck,  label: 'Fast Shipping',   desc: 'Physical items shipped worldwide' },
-                                { icon: Shield, label: 'Secure Payments', desc: 'Stripe-powered checkout' },
-                                { icon: Star,   label: 'Expert Curated',  desc: 'Handpicked by Italostudy team' },
-                            ].map((b, i) => (
-                                <div key={i} className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
-                                    <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                                        <b.icon className="w-4 h-4" />
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-900">{b.label}</p>
-                                        <p className="text-[10px] text-slate-400 font-medium mt-0.5 leading-snug">{b.desc}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )
-                )}
-            </div>
-
-            {/* ─── Footer ──────────────────────────────────────── */}
-            <StoreFooter />
-
-            {/* ─── Mobile menu ─────────────────────────────────── */}
-            <AnimatePresence>
-                {isMobileMenuOpen && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                    >
-                        <motion.div
-                            initial={{ x: '100%' }}
-                            animate={{ x: 0 }}
-                            exit={{ x: '100%' }}
-                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                            className="absolute right-0 top-0 bottom-0 w-72 bg-white dark:bg-slate-900 shadow-2xl p-6 space-y-4"
-                            onClick={e => e.stopPropagation()}
-                        >
-                             <div className="flex items-center justify-between mb-6">
-                                <span className="font-black text-slate-900 dark:text-white">Store Menu</span>
-                                <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 rounded-xl hover:bg-slate-50">
-                                    <X className="w-5 h-5 text-slate-500" />
-                                </button>
-                            </div>
-
-                            <div className="space-y-1 mb-6">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 mb-2">Navigation</p>
-                                <button onClick={() => { navigate('/'); setIsMobileMenuOpen(false); }}
-                                    className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-3">
-                                    <ShoppingBag className="w-4 h-4" /> Home
-                                </button>
-                                <button onClick={() => { navigate('/products'); setIsMobileMenuOpen(false); }}
-                                    className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-3">
-                                    <Package className="w-4 h-4" /> All Products
-                                </button>
-                                {user && (
-                                    <button onClick={() => { navigate('/orders'); setIsMobileMenuOpen(false); }}
-                                        className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-3">
-                                        <ClipboardList className="w-4 h-4" /> My Orders
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 mb-2">Categories</p>
-                                {isLoading ? (
-                                    <div className="px-4">
-                                        <CategorySidebarSkeleton />
-                                    </div>
-                                ) : (
-                                    categories.map(cat => (
-                                        <button key={cat.id} onClick={() => { setActiveCategoryFilter(cat.id); setIsMobileMenuOpen(false); }}
-                                            className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
-                                            {cat.name}
-                                            <ChevronRight className="w-4 h-4 text-slate-400" />
+                            {/* ── Search Results ───────────────────────────── */}
+                            {isSearching && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3 flex-wrap">
+                                            <span className="font-black text-slate-900 dark:text-white text-sm">
+                                                {filteredProducts.length} results
+                                            </span>
+                                            {searchQuery && (
+                                                <span className="text-sm text-slate-500">
+                                                    for "<span className="text-indigo-600 font-bold">{searchQuery}</span>"
+                                                </span>
+                                            )}
+                                            {activeCategoryFilter && (
+                                                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 text-[10px] font-black uppercase tracking-widest">
+                                                    {categories.find(c => c.id === activeCategoryFilter)?.name}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={() => { setSearchQuery(''); setActiveCategoryFilter(null); }}
+                                            className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-1"
+                                        >
+                                            <X className="w-3 h-3" /> Clear
                                         </button>
-                                    ))
-                                )}
-                            </div>
+                                    </div>
+                                    <ProductGrid
+                                        products={filteredProducts} isLoading={isLoading}
+                                        navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart}
+                                    />
+                                </div>
+                            )}
 
-                            <div className="border-t border-slate-50 dark:border-slate-800 pt-4 mt-4 space-y-3 px-2">
-                                {user ? (
-                                    <button onClick={() => {
-                                        const url = session 
-                                            ? `https://app.italostudy.com/#access_token=${session.access_token}&refresh_token=${session.refresh_token}&type=signup`
-                                            : 'https://app.italostudy.com';
-                                        window.open(url, '_blank', 'noopener,noreferrer');
-                                    }}
-                                        className="w-full h-12 rounded-2xl bg-[#0f172a] text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-slate-200">
-                                        Go to Dashboard
-                                    </button>
+                            {/* ── Dynamic Sections ─────────────────────────── */}
+                            {!isSearching && (
+                                sections.length === 0 ? (
+                                    <div className="space-y-5">
+                                        <SectionHeader title="All Products" />
+                                        <ProductGrid
+                                            products={products} isLoading={false}
+                                            navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart}
+                                        />
+                                    </div>
                                 ) : (
-                                    <button onClick={() => navigate('/auth')}
-                                        className="w-full h-12 rounded-2xl bg-[#0f172a] text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-slate-200">
-                                        <LogIn className="w-4 h-4" /> Login
-                                    </button>
-                                )}
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                    sections.map(section => {
+                                        const sectionProds = productsForSection(section);
+                                        if (!sectionProds.length) return null;
+                                        return (
+                                            <div key={section.id} className="space-y-4">
+                                                <SectionHeader
+                                                    title={section.title}
+                                                    subtitle={section.subtitle || undefined}
+                                                    onViewAll={() => setActiveCategoryFilter(section.category_id)}
+                                                />
+                                                {section.section_type === 'scroll' && (
+                                                    <HorizontalScrollRow products={sectionProds} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                                )}
+                                                {section.section_type === 'grid' && (
+                                                    <ProductGrid products={sectionProds} isLoading={false} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                                )}
+                                                {section.section_type === 'hero_grid' && (
+                                                    <HeroGrid products={sectionProds} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                )
+                            )}
 
-            <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
-        </div>
+                            {/* ── Recently Viewed ──────────────────────────── */}
+                            {!isSearching && recentlyViewed.length > 0 && (
+                                <div className="space-y-4 pt-6 border-t border-slate-200">
+                                    <SectionHeader title="Recently Viewed" />
+                                    <HorizontalScrollRow products={recentlyViewed} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                </div>
+                            )}
+
+                            {/* ── Trust strip ──────────────────────────────── */}
+                            {!isSearching && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-6 border-t border-slate-200">
+                                    {[
+                                        { icon: Zap,    label: 'Instant Access',  desc: 'Digital products unlocked immediately' },
+                                        { icon: Truck,  label: 'Fast Shipping',   desc: 'Physical items shipped worldwide' },
+                                        { icon: Shield, label: 'Secure Payments', desc: 'Stripe-powered checkout' },
+                                        { icon: Star,   label: 'Expert Curated',  desc: 'Handpicked by Italostudy team' },
+                                    ].map((b, i) => (
+                                        <div key={i} className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                                                <b.icon className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-900">{b.label}</p>
+                                                <p className="text-[10px] text-slate-400 font-medium mt-0.5 leading-snug">{b.desc}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ─── Footer ──────────────────────────────────────── */}
+                        <StoreFooter />
+
+                        {/* ─── Mobile menu ─────────────────────────────────── */}
+                        <AnimatePresence>
+                            {isMobileMenuOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm"
+                                    onClick={() => setIsMobileMenuOpen(false)}
+                                >
+                                    <motion.div
+                                        initial={{ x: '100%' }}
+                                        animate={{ x: 0 }}
+                                        exit={{ x: '100%' }}
+                                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                        className="absolute right-0 top-0 bottom-0 w-72 bg-white dark:bg-slate-900 shadow-2xl p-6 space-y-4"
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        <div className="flex items-center justify-between mb-6">
+                                            <span className="font-black text-slate-900 dark:text-white">Store Menu</span>
+                                            <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 rounded-xl hover:bg-slate-50">
+                                                <X className="w-5 h-5 text-slate-500" />
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-1 mb-6">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 mb-2">Navigation</p>
+                                            <button onClick={() => { navigate('/'); setIsMobileMenuOpen(false); }}
+                                                className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-3">
+                                                <ShoppingBag className="w-4 h-4" /> Home
+                                            </button>
+                                            <button onClick={() => { navigate('/products'); setIsMobileMenuOpen(false); }}
+                                                className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-3">
+                                                <Package className="w-4 h-4" /> All Products
+                                            </button>
+                                            {user && (
+                                                <button onClick={() => { navigate('/orders'); setIsMobileMenuOpen(false); }}
+                                                    className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-3">
+                                                    <ClipboardList className="w-4 h-4" /> My Orders
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 mb-2">Categories</p>
+                                            {isLoading ? null : (
+                                                categories.map(cat => (
+                                                    <button key={cat.id} onClick={() => { setActiveCategoryFilter(cat.id); setIsMobileMenuOpen(false); }}
+                                                        className="w-full text-left px-4 py-3 rounded-2xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
+                                                        {cat.name}
+                                                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+
+                                        <div className="border-t border-slate-50 dark:border-slate-800 pt-4 mt-4 space-y-3 px-2">
+                                            {user ? (
+                                                <button onClick={() => {
+                                                    const url = session 
+                                                        ? `https://app.italostudy.com/#access_token=${session.access_token}&refresh_token=${session.refresh_token}&type=signup`
+                                                        : 'https://app.italostudy.com';
+                                                    window.open(url, '_blank', 'noopener,noreferrer');
+                                                }}
+                                                    className="w-full h-12 rounded-2xl bg-[#0f172a] text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-slate-200">
+                                                    Go to Dashboard
+                                                </button>
+                                            ) : (
+                                                <button onClick={() => navigate('/auth')}
+                                                    className="w-full h-12 rounded-2xl bg-[#0f172a] text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-slate-200">
+                                                    <LogIn className="w-4 h-4" /> Login
+                                                </button>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+                <SocialProofToasts products={products} />
+            </div>
         </Layout>
     );
 }
@@ -553,6 +587,42 @@ function ProductCard({ product, navigate, addedId, onAddToCart, variant = 'defau
     const discountPct = product.discount_price && product.price < product.discount_price
         ? Math.round((1 - product.price / product.discount_price) * 100) : null;
 
+    const [isWishlisted, setIsWishlisted] = useState(false);
+
+    useEffect(() => {
+        const wishlist = JSON.parse(localStorage.getItem('italostudy_wishlist') || '[]');
+        setIsWishlisted(wishlist.some((item: any) => item.id === product.id));
+
+        const handleWishlistUpdate = () => {
+            const currentWishlist = JSON.parse(localStorage.getItem('italostudy_wishlist') || '[]');
+            setIsWishlisted(currentWishlist.some((item: any) => item.id === product.id));
+        };
+        window.addEventListener('wishlist-updated', handleWishlistUpdate);
+        return () => window.removeEventListener('wishlist-updated', handleWishlistUpdate);
+    }, [product.id]);
+
+    const toggleWishlist = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const wishlist = JSON.parse(localStorage.getItem('italostudy_wishlist') || '[]');
+        if (isWishlisted) {
+            const updated = wishlist.filter((item: any) => item.id !== product.id);
+            localStorage.setItem('italostudy_wishlist', JSON.stringify(updated));
+            setIsWishlisted(false);
+        } else {
+            wishlist.push({
+                id: product.id,
+                title: product.title,
+                price: product.price,
+                image: product.images?.[0] || '',
+                slug: product.slug,
+                type: product.type
+            });
+            localStorage.setItem('italostudy_wishlist', JSON.stringify(wishlist));
+            setIsWishlisted(true);
+        }
+        window.dispatchEvent(new Event('wishlist-updated'));
+    };
+
     return (
         <div
             onClick={() => navigate(`/${product.slug}`)}
@@ -573,11 +643,23 @@ function ProductCard({ product, navigate, addedId, onAddToCart, variant = 'defau
                         -{discountPct}% OFF
                     </span>
                 )}
+                {product.stock_quantity > 0 && product.stock_quantity <= 10 && (
+                    <span className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-amber-500/90 backdrop-blur-sm text-white text-[9px] font-black uppercase flex items-center gap-1">
+                        Only {product.stock_quantity} left!
+                    </span>
+                )}
                 {product.type === 'digital' && (
                     <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-[#0f172a] text-white text-[9px] font-black uppercase">
                         Digital
                     </span>
                 )}
+                <button
+                    onClick={toggleWishlist}
+                    className="absolute top-2 right-2 md:top-2.5 md:right-2.5 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-white transition-all shadow-sm z-10 opacity-0 group-hover:opacity-100"
+                    style={{ opacity: isWishlisted ? 1 : undefined }}
+                >
+                    <Heart className={cn("w-3.5 h-3.5", isWishlisted && "fill-rose-500 text-rose-500")} />
+                </button>
             </div>
 
             <div className="p-2 md:p-3 flex flex-col flex-1 gap-1.5 md:gap-2 text-center md:text-left">
@@ -585,8 +667,23 @@ function ProductCard({ product, navigate, addedId, onAddToCart, variant = 'defau
                     "font-bold md:font-semibold text-slate-800 leading-tight md:leading-snug line-clamp-1 md:line-clamp-2 group-hover:text-[#0f172a] transition-colors",
                     variant === 'compact' ? "text-[10px] md:text-xs" : "text-[11px] md:text-sm"
                 )}>
-                    {product.title}
                 </h3>
+                {product.avgRating && (
+                    <div className="flex items-center justify-center md:justify-start gap-1">
+                        <div className="flex gap-0.5">
+                            {[...Array(5)].map((_, i) => (
+                                <Star 
+                                    key={i} 
+                                    className={cn(
+                                        "w-2 md:w-2.5 h-2 md:h-2.5", 
+                                        i < Math.round(product.avgRating || 0) ? "text-amber-400 fill-amber-400" : "text-slate-200"
+                                    )} 
+                                />
+                            ))}
+                        </div>
+                        <span className="text-[8px] md:text-[9px] font-bold text-slate-400">({product.reviewCount})</span>
+                    </div>
+                )}
                 <div className="flex items-baseline justify-center md:justify-start gap-1 md:gap-1.5 mt-auto">
                     <span className={cn("font-black text-[#0f172a]", variant === 'compact' ? "text-xs md:text-sm" : "text-sm md:text-base")}>
                         {displayFormat(product.price)}
@@ -597,15 +694,18 @@ function ProductCard({ product, navigate, addedId, onAddToCart, variant = 'defau
                 </div>
                 <button
                     onClick={e => onAddToCart(product, e)}
+                    disabled={product.stock_quantity === 0}
                     className={cn(
                         "w-full rounded-lg font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1 md:gap-1.5 mt-0.5 md:mt-1",
                         variant === 'compact' ? "h-7 md:h-8" : "h-8 md:h-9",
-                        isAdded
-                            ? "bg-emerald-500 text-white"
-                            : "bg-[#0f172a] hover:bg-slate-800 active:scale-95 text-white"
+                        product.stock_quantity === 0
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                            : isAdded
+                                ? "bg-emerald-500 text-white"
+                                : "bg-[#0f172a] hover:bg-slate-800 active:scale-95 text-white"
                     )}
                 >
-                    {isAdded ? <><Check className="w-3 h-3" /> <span className="hidden xs:inline">Added</span></> : <><ShoppingBag className="w-3 h-3" /> <span className="hidden xs:inline">Add</span><span className="xs:hidden">Buy</span></>}
+                    {product.stock_quantity === 0 ? 'Sold Out' : isAdded ? <><Check className="w-3 h-3" /> <span className="hidden xs:inline">Added</span></> : <><ShoppingBag className="w-3 h-3" /> <span className="hidden xs:inline">Add</span><span className="xs:hidden">Buy</span></>}
                 </button>
             </div>
         </div>
@@ -645,9 +745,7 @@ function ProductGrid({ products, isLoading, navigate, addedId, onAddToCart }: {
     addedId: string | null;
     onAddToCart: (p: Product, e: React.MouseEvent) => void;
 }) {
-    if (isLoading) return (
-        <StoreGridSkeleton />
-    );
+    if (isLoading) return null;
     if (!products.length) return (
         <div className="py-20 text-center text-slate-400">
             <Package className="w-12 h-12 mx-auto mb-4 opacity-20" />
@@ -696,4 +794,3 @@ function HeroGrid({ products, navigate, addedId, onAddToCart }: {
         </div>
     );
 }
-

@@ -7,6 +7,7 @@ import ProductDetail from "./pages/ProductDetail";
 import Auth from "./pages/Auth";
 import PaymentCallback from "./pages/PaymentCallback";
 import ResetPassword from "./pages/ResetPassword";
+import Wishlist from "./pages/Wishlist";
 
 import { useState, useEffect } from "react";
 import { supabase } from "./integrations/supabase/client";
@@ -49,7 +50,7 @@ function MaintenanceScreen() {
 }
 
 function App() {
-  const [isMaintenance, setIsMaintenance] = useState<boolean | null>(null);
+  const [isMaintenance, setIsMaintenance] = useState<boolean>(false);
 
   useEffect(() => {
     async function checkMaintenance() {
@@ -73,14 +74,6 @@ function App() {
     checkMaintenance();
   }, []);
 
-  if (isMaintenance === null) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-slate-950">
-        <Loader2 className="w-8 h-8 animate-spin text-white opacity-20" />
-      </div>
-    );
-  }
-
   if (isMaintenance) {
     return <MaintenanceScreen />;
   }
@@ -93,6 +86,7 @@ function App() {
         <Route path="/payment/callback" element={<PaymentCallback />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/products" element={<AllProducts />} />
+        <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/orders" element={<MyOrders />} />
         <Route path="/:slug" element={<ProductDetail />} />
         
@@ -102,6 +96,7 @@ function App() {
         <Route path="/store/payment/callback" element={<PaymentCallback />} />
         <Route path="/store/reset-password" element={<ResetPassword />} />
         <Route path="/store/products" element={<AllProducts />} />
+        <Route path="/store/wishlist" element={<Wishlist />} />
         <Route path="/store/orders" element={<MyOrders />} />
         <Route path="/store/:slug" element={<ProductDetail />} />
       </Routes>

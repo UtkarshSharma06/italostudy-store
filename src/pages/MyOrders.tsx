@@ -27,6 +27,8 @@ interface OrderItem {
         type: 'digital' | 'physical';
         images: string[];
         file_url: string | null;
+        is_bundle?: boolean;
+        bundle_items?: string[];
     };
 }
 
@@ -58,6 +60,68 @@ const statusConfig: Record<string, { label: string; icon: any; color: string; bg
     refunded:  { label: 'Refunded',  icon: RefreshCw,    color: 'text-slate-600',  bg: 'bg-slate-50 border-slate-200' },
 };
 
+function OrderStatusTracker({ status, hasPhysical, hasDigital }: { status: string, hasPhysical: boolean, hasDigital: boolean }) {
+    if (status === 'cancelled' || status === 'refunded') return null;
+
+    if (!hasPhysical && hasDigital) {
+        return (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                <div>
+                    <p className="text-xs font-black text-emerald-800">Digital Access Granted</p>
+                    <p className="text-[10px] text-emerald-600 font-medium mt-0.5">Your digital resources are ready to download.</p>
+                </div>
+            </div>
+        );
+    }
+
+    const steps = [
+        { key: 'processing', label: 'Processing', icon: Clock },
+        { key: 'shipped', label: 'Shipped', icon: Truck },
+        { key: 'delivered', label: 'Delivered', icon: CheckCircle2 }
+    ];
+
+    let activeIndex = 0;
+    if (status === 'shipped') activeIndex = 1;
+    if (status === 'delivered') activeIndex = 2;
+
+    return (
+        <div className="bg-white border border-slate-100 rounded-xl p-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-6">Order Progress</p>
+            <div className="relative flex justify-between px-2">
+                {/* Progress Line */}
+                <div className="absolute top-4 left-8 right-8 h-1 bg-slate-100 -z-10 rounded-full" />
+                <div 
+                    className="absolute top-4 left-8 h-1 bg-indigo-600 -z-10 transition-all duration-700 ease-in-out rounded-full" 
+                    style={{ width: `calc(${(activeIndex / (steps.length - 1)) * 100}% - 32px)` }}
+                />
+
+                {steps.map((step, index) => {
+                    const isCompleted = index <= activeIndex;
+                    const isActive = index === activeIndex;
+                    const StepIcon = step.icon;
+
+                    return (
+                        <div key={step.key} className="flex flex-col items-center gap-2 z-10 w-16">
+                            <div className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-500",
+                                isCompleted ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-slate-300",
+                                isActive && "ring-4 ring-indigo-50 scale-110"
+                            )}>
+                                <StepIcon className="w-4 h-4" />
+                            </div>
+                            <span className={cn(
+                                "text-[9px] font-black uppercase tracking-widest text-center leading-tight mt-1 transition-colors duration-500",
+                                isCompleted ? "text-slate-800" : "text-slate-400"
+                            )}>{step.label}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 export default function MyOrders({ isMobileView: _isMobileView = false }: { isMobileView?: boolean }) {
     const navigate = useNavigate();
     const { user, profile } = useAuth() as any;
@@ -70,6 +134,7 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [generatingId, setGeneratingId] = useState<string | null>(null);
     const [linkError, setLinkError] = useState<string | null>(null);
+    const [bundleProducts, setBundleProducts] = useState<Record<string, any>>({});
 
     const refreshCartCount = useCallback(() => {
         try {
@@ -97,14 +162,44 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
                 *,
                 order_items:store_order_items (
                     id, quantity, unit_price,
-                    product:store_products ( id, title, slug, type, images, download_url )
+                    product:store_products ( id, title, slug, type, images, download_url, is_bundle, bundle_items )
                 )
             `)
             .eq('user_id', user.id)
             .eq('status', 'paid')
             .order('created_at', { ascending: false });
 
-        if (!error) setOrders((data as any) || []);
+        if (error) {
+            setIsLoading(false);
+            return;
+        }
+
+        const ordersData = (data as any) || [];
+        setOrders(ordersData);
+
+        // Fetch bundle items if any
+        const allBundleItemIds = new Set<string>();
+        ordersData.forEach((order: any) => {
+            order.order_items?.forEach((item: any) => {
+                if (item.product?.is_bundle && item.product?.bundle_items) {
+                    item.product.bundle_items.forEach((id: string) => allBundleItemIds.add(id));
+                }
+            });
+        });
+
+        if (allBundleItemIds.size > 0) {
+            const { data: bData } = await (supabase
+                .from('store_products' as any) as any)
+                .select('id, title, slug, type, images, download_url')
+                .in('id', Array.from(allBundleItemIds));
+            
+            if (bData) {
+                const bundleMap: Record<string, any> = {};
+                (bData as any).forEach((p: any) => bundleMap[p.id] = p);
+                setBundleProducts(bundleMap);
+            }
+        }
+
         setIsLoading(false);
     };
 
@@ -117,11 +212,20 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
             });
 
             if (error || !data?.url) {
-                const errMsg = error?.message || data?.error || 'Failed to generate link';
-                if (errMsg.toLowerCase().includes('expired') || errMsg.toLowerCase().includes('piracy')) {
+                let actualError = error?.message || data?.error || 'Failed to generate link';
+                
+                // Try to extract the real edge function error message
+                if (error && (error as any).context && typeof (error as any).context.json === 'function') {
+                    try {
+                        const errBody = await (error as any).context.json();
+                        if (errBody.error) actualError = errBody.error;
+                    } catch (e) { /* silent */ }
+                }
+
+                if (actualError.toLowerCase().includes('expired') || actualError.toLowerCase().includes('piracy')) {
                     setLinkError('Link got expired due to piracy leak, mail us at contact@italostudy.com');
                 } else {
-                    toast.error(errMsg);
+                    toast.error(`Download Error: ${actualError}`);
                 }
                 return;
             }
@@ -512,55 +616,98 @@ export default function MyOrders({ isMobileView: _isMobileView = false }: { isMo
                                             >
                                                 <div className="px-6 pb-6 space-y-5 border-t border-slate-50 pt-5">
 
+                                                    {/* Status Tracker */}
+                                                    <OrderStatusTracker status={order.status} hasPhysical={hasPhysical} hasDigital={hasDigital} />
+
                                                     {/* Items */}
                                                     <div className="space-y-3">
                                                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Items in this order</p>
                                                         {order.order_items?.map(item => (
-                                                            <div key={item.id} className="flex items-center gap-4 bg-slate-50 rounded-xl p-3">
-                                                                <div className="w-12 h-12 rounded-xl bg-white border border-slate-100 overflow-hidden shrink-0">
-                                                                    <img
-                                                                        src={item.product?.images?.[0] || `https://placehold.co/80x80/f1f5f9/0f172a?text=P`}
-                                                                        alt={item.product?.title}
-                                                                        className="w-full h-full object-cover"
-                                                                    />
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-sm font-bold text-slate-800 line-clamp-1">{item.product?.title}</p>
-                                                                    <p className="text-[10px] text-slate-400 font-medium">
-                                                                        {item.quantity} × {formatPrice(item.unit_price)}
-                                                                    </p>
-                                                                </div>
-                                                                <span className={cn(
-                                                                    "shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase",
-                                                                    item.product?.type === 'digital' ? 'bg-[#0f172a] text-white' : 'bg-slate-100 text-slate-600'
-                                                                )}>
-                                                                    {item.product?.type === 'digital' ? <Monitor className="w-2.5 h-2.5" /> : <Package className="w-2.5 h-2.5" />}
-                                                                    {item.product?.type}
-                                                                </span>
-
-                                                                {/* Download button for digital */}
-                                                                {item.product?.type === 'digital' && (order.status === 'paid' || order.status === 'delivered') && (
-                                                                    <div className="flex flex-col items-end gap-2 shrink-0">
-                                                                        <button
-                                                                            disabled={generatingId === item.product.id}
-                                                                            onClick={(e) => { e.stopPropagation(); handleSecureDownload(item.product.id); }}
-                                                                            className={cn(
-                                                                                "flex items-center gap-1.5 h-8 px-3 rounded-lg text-white text-[10px] font-black uppercase tracking-widest transition-all",
-                                                                                generatingId === item.product.id ? "bg-slate-300" : "bg-emerald-500 hover:bg-emerald-600"
-                                                                            )}
-                                                                        >
-                                                                            {generatingId === item.product.id ? (
-                                                                                <><Loader2 className="w-3 h-3 animate-spin" /> Verifying</>
-                                                                            ) : (
-                                                                                <><Download className="w-3 h-3" /> Get Secure Link</>
-                                                                            )}
-                                                                        </button>
-                                                                        {linkError && generatingId === null && (
-                                                                            <p className="text-[9px] font-bold text-rose-500 max-w-[150px] text-right leading-tight">
-                                                                                {linkError}
-                                                                            </p>
-                                                                        )}
+                                                            <div key={item.id} className="space-y-3">
+                                                                <div className="flex items-center gap-4 bg-slate-50 rounded-xl p-3">
+                                                                    <div className="w-12 h-12 rounded-xl bg-white border border-slate-100 overflow-hidden shrink-0">
+                                                                        <img
+                                                                            src={item.product?.images?.[0] || `https://placehold.co/80x80/f1f5f9/0f172a?text=P`}
+                                                                            alt={item.product?.title}
+                                                                            className="w-full h-full object-cover"
+                                                                        />
                                                                     </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-sm font-bold text-slate-800 line-clamp-1">{item.product?.title}</p>
+                                                                        <p className="text-[10px] text-slate-400 font-medium">
+                                                                            {item.quantity} × {formatPrice(item.unit_price)}
+                                                                        </p>
+                                                                    </div>
+                                                                    <span className={cn(
+                                                                        "shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase",
+                                                                        item.product?.type === 'digital' ? 'bg-[#0f172a] text-white' : 'bg-slate-100 text-slate-600'
+                                                                    )}>
+                                                                        {item.product?.type === 'digital' ? <Monitor className="w-2.5 h-2.5" /> : <Package className="w-2.5 h-2.5" />}
+                                                                        {item.product?.type}
+                                                                    </span>
+
+                                                                    {/* Download button for digital */}
+                                                                    {item.product?.type === 'digital' && (order.status === 'paid' || order.status === 'delivered') && (
+                                                                        <div className="flex flex-col items-end gap-2 shrink-0">
+                                                                            <button
+                                                                                disabled={generatingId === item.product.id}
+                                                                                onClick={(e) => { e.stopPropagation(); handleSecureDownload(item.product.id); }}
+                                                                                className={cn(
+                                                                                    "flex items-center gap-1.5 h-8 px-3 rounded-lg text-white text-[10px] font-black uppercase tracking-widest transition-all",
+                                                                                    generatingId === item.product.id ? "bg-slate-300" : "bg-emerald-500 hover:bg-emerald-600"
+                                                                                )}
+                                                                            >
+                                                                                {generatingId === item.product.id ? (
+                                                                                    <><Loader2 className="w-3 h-3 animate-spin" /> Verifying</>
+                                                                                ) : (
+                                                                                    <><Download className="w-3 h-3" /> Get Secure Link</>
+                                                                                )}
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Bundle Items Expansion */}
+                                                                {item.product?.is_bundle && item.product?.bundle_items && (
+                                                                    <div className="ml-8 pl-4 border-l-2 border-slate-100 space-y-2">
+                                                                        <div className="flex items-center gap-2 mb-1">
+                                                                            <Package className="w-3 h-3 text-slate-400" />
+                                                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Bundle Contents</p>
+                                                                        </div>
+                                                                        {item.product.bundle_items.map((bId: string) => {
+                                                                            const bProd = bundleProducts[bId];
+                                                                            if (!bProd) return null;
+                                                                            return (
+                                                                                <div key={bId} className="flex items-center gap-3 bg-white/50 rounded-xl p-2 border border-slate-50">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-white border border-slate-100 overflow-hidden shrink-0">
+                                                                                        <img src={bProd.images?.[0]} alt="" className="w-full h-full object-cover" />
+                                                                                    </div>
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <p className="text-xs font-bold text-slate-700 line-clamp-1">{bProd.title}</p>
+                                                                                    </div>
+                                                                                    {bProd.type === 'digital' && (
+                                                                                        <button
+                                                                                            disabled={generatingId === bProd.id}
+                                                                                            onClick={(e) => { e.stopPropagation(); handleSecureDownload(bProd.id); }}
+                                                                                            className={cn(
+                                                                                                "flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-white text-[9px] font-black uppercase tracking-widest transition-all",
+                                                                                                generatingId === bProd.id ? "bg-slate-300" : "bg-indigo-500 hover:bg-indigo-600 shadow-sm"
+                                                                                            )}
+                                                                                        >
+                                                                                            {generatingId === bProd.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
+                                                                                            Link
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {linkError && generatingId === null && (
+                                                                    <p className="text-[9px] font-bold text-rose-500 text-right leading-tight px-3">
+                                                                        {linkError}
+                                                                    </p>
                                                                 )}
                                                             </div>
                                                         ))}

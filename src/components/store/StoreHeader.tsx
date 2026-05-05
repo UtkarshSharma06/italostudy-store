@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Search, X, ClipboardList, Package, LogIn, Menu } from 'lucide-react';
+import { ShoppingBag, Search, X, ClipboardList, Package, LogIn, Menu, Heart } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useCurrency } from '@/hooks/useCurrencyContext';
 
 
 interface StoreHeaderProps {
@@ -20,10 +23,40 @@ export default function StoreHeader({
     cartCount,
     setIsCartOpen,
     navigate,
-    searchQuery = '',
-    setSearchQuery = () => {},
+    searchQuery: externalSearchQuery,
+    setSearchQuery: externalSetSearchQuery,
     setIsMobileMenuOpen = () => {}
 }: StoreHeaderProps) {
+    const { formatPrice } = useCurrency();
+    const [localSearchQuery, setLocalSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+
+    const query = externalSearchQuery !== undefined ? externalSearchQuery : localSearchQuery;
+    const setQuery = externalSetSearchQuery || setLocalSearchQuery;
+
+    useEffect(() => {
+        if (!query.trim()) {
+            setSearchResults([]);
+            return;
+        }
+        
+        const fetchResults = async () => {
+            setIsSearching(true);
+            const { data } = await (supabase
+                .from('store_products' as any) as any)
+                .select('id, title, slug, price, images, type')
+                .eq('is_active', true)
+                .ilike('title', `%${query}%`)
+                .limit(5);
+            
+            if (data) setSearchResults(data);
+            setIsSearching(false);
+        };
+        
+        const timeoutId = setTimeout(fetchResults, 300);
+        return () => clearTimeout(timeoutId);
+    }, [query]);
     return (
         <header className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 sticky top-0 z-40 shadow-sm shrink-0">
             <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
@@ -50,15 +83,45 @@ export default function StoreHeader({
                         <input
                             type="text"
                             placeholder="Search resources..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
                             className="w-full pl-9 md:pl-11 pr-9 md:pr-10 h-10 md:h-11 rounded-full bg-slate-50 border border-slate-200 text-xs md:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent transition-all placeholder:text-slate-400"
                         />
-                        {searchQuery && (
-                            <button onClick={() => setSearchQuery('')}
+                        {query && (
+                            <button onClick={() => setQuery('')}
                                 className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-slate-200 transition-colors">
                                 <X className="w-3.5 h-3.5 text-slate-500" />
                             </button>
+                        )}
+
+                        {/* Search Dropdown */}
+                        {query && (
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 max-h-[70vh] overflow-y-auto">
+                                {isSearching ? (
+                                    <div className="p-4 text-center text-xs text-slate-400 font-bold uppercase tracking-widest animate-pulse">Searching...</div>
+                                ) : searchResults.length > 0 ? (
+                                    <div className="flex flex-col p-1">
+                                        {searchResults.map((p) => (
+                                            <Link
+                                                key={p.id}
+                                                to={`/store/${p.slug}`}
+                                                onClick={() => setQuery('')}
+                                                className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors group"
+                                            >
+                                                <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                                                    <img src={p.images?.[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-xs font-black text-[#0f172a] truncate">{p.title}</h4>
+                                                    <p className="text-[10px] font-bold text-indigo-600">{formatPrice(p.price)}</p>
+                                                </div>
+                                            </Link>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="p-4 text-center text-xs text-slate-400 font-bold uppercase tracking-widest">No results found</div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -74,6 +137,12 @@ export default function StoreHeader({
                             <span className="text-[9px] font-black uppercase tracking-widest">My Orders</span>
                         </button>
                     )}
+
+                    <Link to="/wishlist"
+                        className="hidden md:flex flex-col items-center gap-0.5 text-slate-500 hover:text-rose-500 transition-colors">
+                        <Heart className="w-5 h-5" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Wishlist</span>
+                    </Link>
 
                     <button
                         onClick={() => setIsCartOpen(true)}

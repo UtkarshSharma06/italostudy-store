@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
     X, ShoppingBag, Trash2, Plus, Minus, ArrowRight,
     Monitor, CreditCard, Loader2, Check,
-    MapPin, User, Smartphone, Home, Globe, ChevronRight, Tag, Zap, ShieldCheck
+    MapPin, User, Smartphone, Home, Globe, ChevronRight, Tag, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -56,17 +56,59 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
     const [country, setCountry] = useState('Italy');
     const [isAutoDetected, setIsAutoDetected] = useState(false);
 
-    // Payment State — reads from store-admin's own config (system_settings → store_config)
     const [storeMode, setStoreMode] = useState<'beta' | 'live'>('beta');
     const [gateways, setGateways] = useState<any>(null);
     const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'razorpay' | 'paypal' | 'cashfree' | 'dodo' | 'beta'>('beta');
-    // const [isPaying, setIsPaying] = useState(false);
+
+    // Upsell state
+    const [upsellProducts, setUpsellProducts] = useState<any[]>([]);
+    
+    // Free shipping state
+    const [freeShippingThreshold, setFreeShippingThreshold] = useState<number>(0);
+
+    // Dynamic tax rates & stock per product
+    const [cartTaxes, setCartTaxes] = useState<Record<string, number>>({});
+    const [cartStocks, setCartStocks] = useState<Record<string, number>>({});
+
+    useEffect(() => {
+        if (cart.length > 0) {
+            const productIds = cart.map(item => item.id);
+            supabase
+                .from('store_products' as any)
+                .select('id, gst_percentage, stock_quantity')
+                .in('id', productIds)
+                .then(({ data }) => {
+                    if (data) {
+                        const taxes: Record<string, number> = {};
+                        const stocks: Record<string, number> = {};
+                        data.forEach((p: any) => {
+                            taxes[p.id] = p.gst_percentage !== null ? p.gst_percentage : 18;
+                            stocks[p.id] = p.stock_quantity !== null ? p.stock_quantity : 999;
+                        });
+                        setCartTaxes(taxes);
+                        setCartStocks(stocks);
+                    }
+                });
+        }
+    }, [cart]);
 
     useEffect(() => {
         if (isOpen) {
             loadStorePaymentConfig();
+            if (cart.length === 0 && upsellProducts.length === 0) {
+                fetchUpsellProducts();
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, cart.length]);
+
+    const fetchUpsellProducts = async () => {
+        const { data } = await supabase
+            .from('store_products' as any)
+            .select('id, title, slug, price, images, discount_price')
+            .eq('is_active', true)
+            .limit(3);
+        if (data) setUpsellProducts(data);
+    };
 
     // Auto-detect country from currency hook
     useEffect(() => {
@@ -89,6 +131,7 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
             const storeConfig = data?.value as any;
             const mode = storeConfig?.mode || 'beta';
             setStoreMode(mode);
+            setFreeShippingThreshold(storeConfig?.free_shipping_threshold || 0);
 
             if (mode === 'live') {
                 // Fetch gateway details from the global payment config RPC
@@ -176,9 +219,17 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
     }, [isOpen]);
 
     const updateQuantity = (id: string, delta: number) => {
-        const updated = cart.map(item =>
-            item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
-        );
+        const updated = cart.map(item => {
+            if (item.id === id) {
+                const maxStock = cartStocks[id] ?? 999;
+                const newQuantity = Math.max(1, Math.min(item.quantity + delta, maxStock));
+                if (newQuantity === item.quantity && delta > 0) {
+                    toast.error(`Only ${maxStock} in stock`);
+                }
+                return { ...item, quantity: newQuantity };
+            }
+            return item;
+        });
         setCart(updated);
         localStorage.setItem('italostudy_cart', JSON.stringify(updated));
         
@@ -203,12 +254,11 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
 
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     
-    // Convert subtotal to regional details
-    // const regionalSubtotal = getPaymentDetails(subtotal);
-    
-    const taxRate = 0.18; 
-    const taxAmount = subtotal * taxRate;
-    // const regionalTax = getPaymentDetails(taxAmount);
+    // Calculate dynamic tax amount per item based on database gst_percentage
+    const taxAmount = cart.reduce((sum, item) => {
+        const rate = cartTaxes[item.id] !== undefined ? cartTaxes[item.id] / 100 : 0.18;
+        return sum + (item.price * item.quantity * rate);
+    }, 0);
 
     const discountAmount = appliedCoupon 
         ? (appliedCoupon.discount_type === 'percent' 
@@ -287,18 +337,21 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
         }
 
         // 2. Insert Order Items
-        const items = cart.map(item => ({
-            order_id: orderData.id,
-            product_id: item.id,
-            quantity: item.quantity,
-            unit_price: item.price,
-            unit_tax_amount: item.price * taxRate,
-            total_tax_amount: (item.price * item.quantity) * taxRate,
-        }));
+        const orderItems = cart.map(item => {
+            const rate = cartTaxes[item.id] !== undefined ? cartTaxes[item.id] / 100 : 0.18;
+            return {
+                order_id: orderData.id,
+                product_id: item.id,
+                quantity: item.quantity,
+                unit_price: item.price,
+                unit_tax_amount: item.price * rate,
+                total_tax_amount: (item.price * item.quantity) * rate,
+            };
+        });
 
         const { error: itemsErr } = await (supabase
             .from('store_order_items' as any) as any)
-            .insert(items);
+            .insert(orderItems);
 
         if (itemsErr) {
             toast.error('Order created but items failed. Contact support.');
@@ -403,6 +456,9 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
             if (edgeData.error) throw new Error(edgeData.error);
             if (!edgeData.checkout_url) throw new Error('Invalid Cashfree session');
 
+            // Save store_order_id before redirect so PaymentCallback can finalize it
+            sessionStorage.setItem('dodo_pending_store_order_id', orderId);
+
             window.location.href = edgeData.checkout_url;
         } catch (err: any) {
             console.error('Cashfree error:', err);
@@ -441,6 +497,10 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
             if (edgeError) throw edgeError;
             if (edgeData.error) throw new Error(edgeData.error);
             if (!edgeData.checkout_url) throw new Error('Invalid Dodo session');
+
+            // Save store_order_id before redirect so PaymentCallback can finalize it
+            // (mirrors the Razorpay flow which uses finalizeOrder directly)
+            sessionStorage.setItem('dodo_pending_store_order_id', orderId);
 
             window.location.href = edgeData.checkout_url;
         } catch (err: any) {
@@ -541,16 +601,61 @@ export default function CartOverlay({ isOpen, onClose }: { isOpen: boolean; onCl
                         {/* ── STEP: CART ─────────────────────────────── */}
                         {step === 'cart' && (
                             <>
+                                {cart.length > 0 && freeShippingThreshold > 0 && hasPhysical && (
+                                    <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 shrink-0">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Free Shipping</span>
+                                            <span className="text-[10px] font-black text-[#0f172a]">
+                                                {subtotal >= freeShippingThreshold ? 'Unlocked! 🎉' : `Add ${formatPrice(freeShippingThreshold - subtotal)} more`}
+                                            </span>
+                                        </div>
+                                        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                            <motion.div 
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${Math.min(100, (subtotal / freeShippingThreshold) * 100)}%` }}
+                                                className={cn(
+                                                    "h-full transition-colors duration-500",
+                                                    subtotal >= freeShippingThreshold ? "bg-emerald-500" : "bg-indigo-600"
+                                                )}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                                     {cart.length === 0 ? (
-                                        <div className="h-full flex flex-col items-center justify-center text-center space-y-4 py-20">
-                                            <div className="w-20 h-20 rounded-3xl bg-slate-50 flex items-center justify-center">
-                                                <ShoppingBag className="w-8 h-8 text-slate-200" />
+                                        <div className="h-full flex flex-col text-center space-y-8 py-10">
+                                            <div className="flex flex-col items-center justify-center space-y-4">
+                                                <div className="w-20 h-20 rounded-3xl bg-slate-50 flex items-center justify-center">
+                                                    <ShoppingBag className="w-8 h-8 text-slate-200" />
+                                                </div>
+                                                <p className="text-slate-400 font-bold">Your bag is empty.</p>
+                                                <button onClick={() => { onClose(); navigate('/products'); }} className="h-10 px-6 rounded-xl bg-[#0f172a] text-white text-xs font-black uppercase tracking-widest">
+                                                    Browse Products
+                                                </button>
                                             </div>
-                                            <p className="text-slate-400 font-bold">Your bag is empty.</p>
-                                            <button onClick={onClose} className="h-10 px-6 rounded-xl bg-[#0f172a] text-white text-xs font-black uppercase tracking-widest">
-                                                Browse Products
-                                            </button>
+
+                                            {upsellProducts.length > 0 && (
+                                                <div className="text-left pt-6 border-t border-slate-100">
+                                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Recommended for you</h3>
+                                                    <div className="space-y-3">
+                                                        {upsellProducts.map(p => (
+                                                            <div key={p.id} className="flex gap-3 items-center group cursor-pointer bg-slate-50/50 hover:bg-slate-50 p-2 rounded-2xl transition-colors border border-transparent hover:border-slate-100" onClick={() => { navigate(`/${p.slug}`); onClose(); }}>
+                                                                <div className="w-16 h-16 rounded-xl bg-white overflow-hidden shrink-0 border border-slate-100">
+                                                                    <img src={p.images?.[0] || `https://placehold.co/80x80/f1f5f9/0f172a`} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h4 className="text-xs font-bold text-slate-800 line-clamp-2 leading-tight group-hover:text-[#0f172a] transition-colors">{p.title}</h4>
+                                                                    <div className="mt-1 flex items-baseline gap-2">
+                                                                        <span className="text-sm font-black text-[#0f172a]">{formatPrice(p.price)}</span>
+                                                                        {p.discount_price && <span className="text-[10px] text-slate-400 line-through">{formatPrice(p.discount_price)}</span>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
                                         cart.map(item => (

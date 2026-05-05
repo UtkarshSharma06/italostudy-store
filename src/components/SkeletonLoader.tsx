@@ -29,7 +29,10 @@ export const CategoryNavSkeleton = () => {
 
 export const CategorySidebarSkeleton = () => {
     return (
-        <div className="space-y-1">
+        <div className="space-y-1 relative">
+            <div className="flex items-center justify-center mb-4 py-4 opacity-[0.4]">
+                <img src="/sidebar-logo.png" alt="Logo" className="h-8 w-auto object-contain" />
+            </div>
             {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-8 w-full rounded-xl" />
             ))}
@@ -166,7 +169,14 @@ export const AnalyticsSkeleton = () => {
 export const StoreItemSkeleton = () => {
     return (
         <div className="group bg-white dark:bg-card rounded-xl border border-slate-100 dark:border-border flex flex-col relative overflow-hidden">
-            <Skeleton className="aspect-square w-full rounded-none mb-4" />
+            <div className="aspect-square w-full bg-slate-50 dark:bg-slate-900/50 mb-4 relative flex items-center justify-center overflow-hidden">
+                <img 
+                    src="/sidebar-logo.png" 
+                    alt="Logo" 
+                    className="w-1/2 h-1/2 object-contain opacity-[0.4] dark:opacity-[0.5]"
+                />
+                <div className="absolute inset-0 animate-premium-blink bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+            </div>
             <div className="p-4 space-y-3 relative z-10">
                 <Skeleton className="h-4 w-3/4 rounded" />
                 <div className="flex items-center gap-2">
@@ -215,8 +225,13 @@ export const StorePageSkeleton = () => {
             {/* Page Body Shimmer */}
             <div className="flex-1 max-w-7xl mx-auto w-full px-4 py-8 space-y-12">
                 {/* Hero Banner Shimmer */}
-                <div className="h-[280px] md:h-[360px] bg-slate-200 dark:bg-slate-800 rounded-2xl relative overflow-hidden">
-                    <div className="absolute bottom-10 left-10 space-y-4">
+                <div className="h-[280px] md:h-[360px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 rounded-2xl relative flex items-center justify-center overflow-hidden">
+                    <img 
+                        src="/sidebar-logo.png" 
+                        alt="Logo" 
+                        className="w-48 h-48 object-contain opacity-[0.4] dark:opacity-[0.5]"
+                    />
+                    <div className="absolute bottom-10 left-10 space-y-4 z-10">
                         <Skeleton className="h-4 w-32 rounded-full" />
                         <Skeleton className="h-12 w-[400px] rounded-2xl" />
                         <Skeleton className="h-6 w-64 rounded-full" />
@@ -269,7 +284,13 @@ export const StoreDetailSkeleton = () => {
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
                 <div className="space-y-4">
-                    <div className="aspect-[4/3] md:aspect-square lg:aspect-[4/3] bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 relative overflow-hidden">
+                    <div className="aspect-[4/3] md:aspect-square lg:aspect-[4/3] bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 relative flex items-center justify-center overflow-hidden">
+                        <img 
+                            src="/sidebar-logo.png" 
+                            alt="Logo" 
+                            className="w-1/3 h-1/3 object-contain opacity-[0.4] dark:opacity-[0.5]"
+                        />
+                        <div className="absolute inset-0 animate-premium-blink bg-gradient-to-r from-transparent via-white/5 to-transparent" />
                     </div>
                     <div className="flex gap-3">
                         {[1, 2, 3].map(i => (
