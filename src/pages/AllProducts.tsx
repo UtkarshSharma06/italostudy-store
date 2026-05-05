@@ -323,61 +323,63 @@ export default function AllProducts() {
                     {/* ── Main Content ───────────────────────────── */}
                     <div className="flex-1 min-w-0 space-y-5">
                         {/* Toolbar */}
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 flex-wrap">
-                                <h1 className="text-xl font-black text-[#0f172a] tracking-tight">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 md:gap-4">
+                            <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+                                <h1 className="text-lg md:text-xl font-black text-[#0f172a] tracking-tight truncate">
                                     {activeCategory
                                         ? categories.find(c => c.id === activeCategory)?.name
                                         : 'All Products'}
                                 </h1>
-                                <span className="text-xs font-semibold text-slate-400">
+                                <span className="text-[10px] md:text-xs font-semibold text-slate-400">
                                     ({isLoading ? '…' : filtered.length} items)
                                 </span>
                                 {activeFilterCount > 0 && (
-                                    <button onClick={clearAll} className="flex items-center gap-1 text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600">
-                                        <X className="w-3 h-3" /> Clear filters
+                                    <button onClick={clearAll} className="flex items-center gap-1 text-[9px] md:text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600">
+                                        <X className="w-2.5 h-2.5" /> Clear
                                     </button>
                                 )}
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
-                                {/* Mobile filter button */}
-                                <button
-                                    onClick={() => setIsSidebarOpen(true)}
-                                    className="lg:hidden flex items-center gap-2 h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600"
-                                >
-                                    <Filter className="w-3.5 h-3.5" />
-                                    Filters
-                                    {activeFilterCount > 0 && (
-                                        <span className="w-4 h-4 rounded-full bg-[#0f172a] text-white text-[9px] font-black flex items-center justify-center">
-                                            {activeFilterCount}
-                                        </span>
-                                    )}
-                                </button>
-
-                                {/* Sort */}
-                                <div className="relative">
-                                    <select
-                                        value={sortKey}
-                                        onChange={e => setSortKey(e.target.value as SortKey)}
-                                        className="h-9 pl-3 pr-8 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 appearance-none focus:outline-none focus:ring-2 focus:ring-[#0f172a]"
+                            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end overflow-x-auto scrollbar-none py-1">
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {/* Mobile filter button */}
+                                    <button
+                                        onClick={() => setIsSidebarOpen(true)}
+                                        className="lg:hidden flex items-center gap-2 h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600"
                                     >
-                                        <option value="default">Sort: Default</option>
-                                        <option value="price_asc">Price: Low → High</option>
-                                        <option value="price_desc">Price: High → Low</option>
-                                        <option value="name_asc">Name: A → Z</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                        <Filter className="w-3.5 h-3.5" />
+                                        <span className="hidden xxs:inline">Filters</span>
+                                        {activeFilterCount > 0 && (
+                                            <span className="w-4 h-4 rounded-full bg-[#0f172a] text-white text-[9px] font-black flex items-center justify-center">
+                                                {activeFilterCount}
+                                            </span>
+                                        )}
+                                    </button>
+
+                                    {/* Sort */}
+                                    <div className="relative">
+                                        <select
+                                            value={sortKey}
+                                            onChange={e => setSortKey(e.target.value as SortKey)}
+                                            className="h-9 pl-3 pr-7 rounded-xl border border-slate-200 bg-white text-[11px] font-black text-slate-600 appearance-none focus:outline-none focus:ring-2 focus:ring-[#0f172a]"
+                                        >
+                                            <option value="default">Sort: Default</option>
+                                            <option value="price_asc">Price: Low → High</option>
+                                            <option value="price_desc">Price: High → Low</option>
+                                            <option value="name_asc">Name: A → Z</option>
+                                        </select>
+                                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                    </div>
                                 </div>
 
                                 {/* View toggle */}
-                                <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden">
+                                <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden shrink-0">
                                     {(['grid', 'list'] as const).map(v => (
                                         <button
                                             key={v}
                                             onClick={() => setViewMode(v)}
                                             className={cn(
-                                                "w-9 h-9 flex items-center justify-center transition-colors",
+                                                "w-8 h-8 md:w-9 md:h-9 flex items-center justify-center transition-colors",
                                                 viewMode === v ? "bg-[#0f172a] text-white" : "text-slate-400 hover:text-slate-700"
                                             )}
                                         >

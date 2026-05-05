@@ -506,25 +506,17 @@ export const ChampionItemSkeleton = () => (
 
 export const HeroBannerSkeleton = () => {
     return (
-        <div className="relative overflow-hidden bg-gradient-to-r from-orange-400 via-rose-500 to-purple-600 dark:from-orange-700/50 dark:via-rose-800/50 dark:to-purple-900/50 rounded-3xl h-[200px] mb-8 shadow-lg">
-            <div className="relative z-10 p-8 h-full flex flex-col justify-center">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                            <Skeleton className="w-6 h-6 rounded-lg bg-white/20" />
-                            <Skeleton className="h-4 w-48 rounded-full bg-white/20" />
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <Skeleton className="h-8 w-64 rounded-xl bg-white/20" />
-                            <Skeleton className="h-8 w-32 rounded-lg bg-indigo-400/30" />
-                        </div>
-                    </div>
-                    {/* Stats Pills Shimmer */}
-                    <div className="flex items-center gap-3 flex-wrap">
-                        {[1, 2, 3].map(i => (
-                            <Skeleton key={i} className="h-10 w-28 rounded-full bg-white/10 border border-white/10 backdrop-blur-md" />
-                        ))}
-                    </div>
+        <div className="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 rounded-2xl md:rounded-3xl h-[180px] md:h-[300px] mb-8 flex items-center justify-center">
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-slate-50/50 dark:via-white/5 to-transparent -translate-x-full animate-shimmer" />
+            <div className="relative z-10 flex flex-col items-center gap-4">
+                <img 
+                    src="/logo.webp" 
+                    alt="Logo" 
+                    className="h-10 md:h-16 w-auto object-contain opacity-[0.2]"
+                />
+                <div className="space-y-3 flex flex-col items-center">
+                    <Skeleton className="h-4 w-32 rounded-full opacity-40" />
+                    <Skeleton className="h-6 w-48 rounded-xl opacity-30" />
                 </div>
             </div>
         </div>

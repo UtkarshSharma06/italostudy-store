@@ -16,6 +16,7 @@ import {
     Heart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
@@ -27,6 +28,11 @@ import StoreFooter from '@/components/store/StoreFooter';
 import StoreHeader from '@/components/store/StoreHeader';
 import { useCurrency } from '@/hooks/useCurrencyContext';
 import SEOHead from '@/components/SEOHead';
+import { 
+    HeroBannerSkeleton, 
+    CategoryNavSkeleton,
+    StoreItemSkeleton
+} from '@/components/SkeletonLoader';
 
 // ── Types ─────────────────────────────────────────────────
 interface Product {
@@ -236,7 +242,9 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
                         {/* ── Category Nav Bar ───────────────────────────── */}
                         <div className="bg-white border-b border-slate-100">
                             <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 h-11 overflow-x-auto scrollbar-none">
-                                {categories.length > 0 && (
+                                {isLoading ? (
+                                    <CategoryNavSkeleton />
+                                ) : categories.length > 0 && (
                                     <>
                                         <button
                                             onClick={() => setActiveCategoryFilter(null)}
@@ -279,7 +287,9 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
                             {/* ── Hero Banner ──────────────────────────────── */}
                             {!isSearching && (
                                 <div className="relative rounded-2xl md:rounded-3xl overflow-hidden bg-slate-200 dark:bg-slate-800 select-none min-h-[180px] md:min-h-[220px] shadow-sm">
-                                    {banners.length > 0 ? (
+                                    {isLoading ? (
+                                        <HeroBannerSkeleton />
+                                    ) : banners.length > 0 ? (
                                         <>
                                             <AnimatePresence mode="wait">
                                                 <motion.div
@@ -403,14 +413,14 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
                                     <div className="space-y-5">
                                         <SectionHeader title="All Products" />
                                         <ProductGrid
-                                            products={products} isLoading={false}
+                                            products={products} isLoading={isLoading}
                                             navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart}
                                         />
                                     </div>
                                 ) : (
                                     sections.map(section => {
                                         const sectionProds = productsForSection(section);
-                                        if (!sectionProds.length) return null;
+                                        if (!sectionProds.length && !isLoading) return null;
                                         return (
                                             <div key={section.id} className="space-y-4">
                                                 <SectionHeader
@@ -419,13 +429,13 @@ export default function Store({ isMobileView: _isMobileView = false }: { isMobil
                                                     onViewAll={() => setActiveCategoryFilter(section.category_id)}
                                                 />
                                                 {section.section_type === 'scroll' && (
-                                                    <HorizontalScrollRow products={sectionProds} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                                    <HorizontalScrollRow products={sectionProds} isLoading={isLoading} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
                                                 )}
                                                 {section.section_type === 'grid' && (
-                                                    <ProductGrid products={sectionProds} isLoading={false} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                                    <ProductGrid products={sectionProds} isLoading={isLoading} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
                                                 )}
                                                 {section.section_type === 'hero_grid' && (
-                                                    <HeroGrid products={sectionProds} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
+                                                    <HeroGrid products={sectionProds} isLoading={isLoading} navigate={navigate} addedId={addedId} onAddToCart={handleAddToCart} />
                                                 )}
                                             </div>
                                         );
@@ -712,14 +722,27 @@ function ProductCard({ product, navigate, addedId, onAddToCart, variant = 'defau
     );
 }
 
-function HorizontalScrollRow({ products, navigate, addedId, onAddToCart }: {
+function HorizontalScrollRow({ products, isLoading, navigate, addedId, onAddToCart }: {
     products: Product[];
+    isLoading?: boolean;
     navigate: ReturnType<typeof useNavigate>;
     addedId: string | null;
     onAddToCart: (p: Product, e: React.MouseEvent) => void;
 }) {
     const rowRef = useRef<HTMLDivElement>(null);
     const scroll = (dir: -1 | 1) => rowRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
+
+    if (isLoading) {
+        return (
+            <div className="flex gap-4 overflow-hidden">
+                {[...Array(4)].map((_, i) => (
+                    <div key={i} className="w-44 shrink-0">
+                        <StoreItemSkeleton />
+                    </div>
+                ))}
+            </div>
+        );
+    }
     return (
         <div className="relative group/row">
             <button onClick={() => scroll(-1)}
@@ -745,7 +768,15 @@ function ProductGrid({ products, isLoading, navigate, addedId, onAddToCart }: {
     addedId: string | null;
     onAddToCart: (p: Product, e: React.MouseEvent) => void;
 }) {
-    if (isLoading) return null;
+    if (isLoading) {
+        return (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {[...Array(8)].map((_, i) => (
+                    <StoreItemSkeleton key={i} />
+                ))}
+            </div>
+        );
+    }
     if (!products.length) return (
         <div className="py-20 text-center text-slate-400">
             <Package className="w-12 h-12 mx-auto mb-4 opacity-20" />
@@ -761,13 +792,28 @@ function ProductGrid({ products, isLoading, navigate, addedId, onAddToCart }: {
     );
 }
 
-function HeroGrid({ products, navigate, addedId, onAddToCart }: {
+function HeroGrid({ products, isLoading, navigate, addedId, onAddToCart }: {
     products: Product[];
+    isLoading?: boolean;
     navigate: ReturnType<typeof useNavigate>;
     addedId: string | null;
     onAddToCart: (p: Product, e: React.MouseEvent) => void;
 }) {
     const { formatPrice } = useCurrency();
+    if (isLoading) {
+        return (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-1">
+                    <StoreItemSkeleton />
+                </div>
+                <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                    {[...Array(4)].map((_, i) => (
+                        <StoreItemSkeleton key={i} />
+                    ))}
+                </div>
+            </div>
+        );
+    }
     if (!products.length) return null;
     const [hero, ...rest] = products;
     return (

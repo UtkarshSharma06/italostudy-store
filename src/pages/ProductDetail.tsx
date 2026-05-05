@@ -367,23 +367,23 @@ export default function ProductDetail({ isMobileView: _isMobileView = false }: {
 
             {/* Breadcrumb & Share */}
             <div className="bg-white border-b border-slate-100">
-                <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-12 text-[12px] font-medium">
-                    <div className="flex items-center gap-2 text-slate-400">
-                        <Link to="/" className="hover:text-slate-900 transition-colors">Store</Link>
-                        <ChevronRight className="w-3 h-3" />
-                        <Link to="/products" className="hover:text-slate-900 transition-colors">UG Entrance Exams</Link>
-                        <ChevronRight className="w-3 h-3" />
-                        <span className="text-slate-900 font-bold truncate max-w-[200px]">{product.title}</span>
+                <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-10 md:h-12 text-[10px] md:text-[12px] font-medium">
+                    <div className="flex items-center gap-2 text-slate-400 overflow-hidden">
+                        <Link to="/" className="hover:text-slate-900 transition-colors whitespace-nowrap">Store</Link>
+                        <ChevronRight className="w-3 h-3 shrink-0" />
+                        <Link to="/products" className="hover:text-slate-900 transition-colors whitespace-nowrap hidden xs:block">UG Entrance Exams</Link>
+                        <ChevronRight className="w-3 h-3 shrink-0 hidden xs:block" />
+                        <span className="text-slate-900 font-bold truncate max-w-[150px] md:max-w-[200px]">{product.title}</span>
                     </div>
-                    <button onClick={handleShare} className="flex items-center gap-2 text-slate-900 font-bold hover:text-indigo-600 transition-all">
-                        <Share2 className="w-4 h-4" />
-                        Share
+                    <button onClick={handleShare} className="flex items-center gap-1.5 md:gap-2 text-slate-900 font-bold hover:text-indigo-600 transition-all shrink-0">
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span className="hidden xxs:inline">Share</span>
                     </button>
                 </div>
             </div>
 
             {/* ── Main product layout ──────────────────────────── */}
-            <div className="flex-1 max-w-7xl mx-auto w-full px-4 py-8 md:py-12">
+            <div className="flex-1 max-w-7xl mx-auto w-full px-4 pt-4 pb-8 md:py-12">
                 <div className="flex flex-col lg:flex-row gap-10 lg:gap-16">
 
                     {/* ── Left: Image Gallery (Fixed/Sticky & Compact) ──────── */}
@@ -591,6 +591,11 @@ export default function ProductDetail({ isMobileView: _isMobileView = false }: {
                                         Buy Now →
                                     </button>
                                     <p className="text-center text-[9px] md:text-[10px] text-slate-400 font-medium">🔒 Secure checkout · SSL encrypted · Stripe payments</p>
+                                    <div className="flex items-center justify-center gap-3">
+                                        {['visa', 'mastercard', 'amex', 'applepay', 'googlepay', 'stripe'].map(p => (
+                                            <img key={p} src={`/payments/${p}.webp`} alt={p} className="h-4 md:h-5 w-auto object-contain hover:scale-110 transition-transform cursor-default" />
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
